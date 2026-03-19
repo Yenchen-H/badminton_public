@@ -124,6 +124,10 @@ input:focus{outline:3px solid rgba(96,165,250,.18);border-color:rgba(59,130,246,
 .sb-names.win{color:#047857}.sb-names.lose{color:#94a3b8}
 .sb-score{font-size:52px;font-weight:800;line-height:1;letter-spacing:-.04em;color:#0f172a}
 .sb-score.leading{background:linear-gradient(135deg,#2563eb,#0ea5e9);-webkit-background-clip:text;background-clip:text;color:transparent}
+.sb-score-input{font-size:52px;font-weight:800;line-height:1;letter-spacing:-.04em;color:#0f172a;border:none;background:transparent;text-align:center;width:90px;outline:none;-moz-appearance:textfield;font-family:inherit;padding:0;cursor:text}
+.sb-score-input::-webkit-inner-spin-button,.sb-score-input::-webkit-outer-spin-button{-webkit-appearance:none}
+.sb-score-input:focus{border-bottom:2px solid rgba(59,130,246,.4);color:#0f172a}
+.sb-score-input.leading{background:linear-gradient(135deg,#2563eb,#0ea5e9);-webkit-background-clip:text;background-clip:text;color:transparent}
 .sb-btns{display:flex;gap:10px}
 .sb-btn{width:42px;height:42px;border-radius:50%;border:1px solid var(--line);background:rgba(255,255,255,.96);font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1;box-shadow:var(--shadow-soft)}
 .sb-btn:active{transform:scale(.94)}
@@ -182,6 +186,7 @@ input:focus{outline:3px solid rgba(96,165,250,.18);border-color:rgba(59,130,246,
   .metrics{grid-template-columns:1fr}
   .sb{padding:16px 8px}
   .sb-score{font-size:40px}
+  .sb-score-input{font-size:40px;width:72px}
   .card,.hist-card,.upcoming-card{padding:18px}
 }
 
@@ -734,7 +739,10 @@ function renderMatchCard(s,m,mi){
     body=`<div class="sb">
       <div class="sb-side">
         <div class="sb-names">${(m.teamA||[]).join('<br>&amp; ')}</div>
-        <div class="sb-score${live.a>live.b?' leading':''}" id="la_${m.id}">${live.a}</div>
+        <input type="number" class="sb-score-input${live.a>live.b?' leading':''}" id="la_${m.id}"
+          value="${live.a}" min="0" max="99"
+          oninput="adjInput('${s.id}','${m.id}','a',this.value)"
+          onblur="adjInputBlur('${s.id}','${m.id}','a',this.value)">
         <div class="sb-btns">
           <button type="button" class="sb-btn minus" onclick="adj('${s.id}','${m.id}','a',-1,${mi})">−</button>
           <button type="button" class="sb-btn plus" onclick="adj('${s.id}','${m.id}','a',+1,${mi})">＋</button>
@@ -742,7 +750,10 @@ function renderMatchCard(s,m,mi){
       </div>
       <div class="sb-vs">vs</div>
       <div class="sb-side">
-        <div class="sb-score${live.b>live.a?' leading':''}" id="lb_${m.id}">${live.b}</div>
+        <input type="number" class="sb-score-input${live.b>live.a?' leading':''}" id="lb_${m.id}"
+          value="${live.b}" min="0" max="99"
+          oninput="adjInput('${s.id}','${m.id}','b',this.value)"
+          onblur="adjInputBlur('${s.id}','${m.id}','b',this.value)">
         <div class="sb-names">${(m.teamB||[]).join('<br>&amp; ')}</div>
         <div class="sb-btns">
           <button type="button" class="sb-btn minus" onclick="adj('${s.id}','${m.id}','b',-1,${mi})">−</button>
@@ -768,11 +779,31 @@ function renderMatchCard(s,m,mi){
 function adj(sid,mid,side,delta,mi){
   if(!liveScores[mid])liveScores[mid]={a:0,b:0};
   liveScores[mid][side]=Math.max(0,liveScores[mid][side]+delta);
-  const live=liveScores[mid];
+  updateScoreDisplay(mid);
+}
+
+function adjInput(sid,mid,side,val){
+  if(!liveScores[mid])liveScores[mid]={a:0,b:0};
+  const n=parseInt(val);
+  if(!isNaN(n)&&n>=0)liveScores[mid][side]=n;
+  updateScoreDisplay(mid,side); // only update styling, not value
+}
+
+function adjInputBlur(sid,mid,side,val){
+  if(!liveScores[mid])liveScores[mid]={a:0,b:0};
+  const n=parseInt(val)||0;
+  liveScores[mid][side]=Math.max(0,n);
+  updateScoreDisplay(mid);
+}
+
+function updateScoreDisplay(mid, skipSide){
+  const live=liveScores[mid];if(!live)return;
   const la=document.getElementById('la_'+mid);
   const lb=document.getElementById('lb_'+mid);
-  if(la){la.textContent=live.a;la.className='sb-score'+(live.a>live.b?' leading':'');}
-  if(lb){lb.textContent=live.b;lb.className='sb-score'+(live.b>live.a?' leading':'');}
+  if(la&&skipSide!=='a'){la.value=live.a;la.className='sb-score-input'+(live.a>live.b?' leading':'');}
+  else if(la){la.className='sb-score-input'+(live.a>live.b?' leading':'');}
+  if(lb&&skipSide!=='b'){lb.value=live.b;lb.className='sb-score-input'+(live.b>live.a?' leading':'');}
+  else if(lb){lb.className='sb-score-input'+(live.b>live.a?' leading':'');}
   const cb=document.getElementById('cfbtn_'+mid);
   if(cb)cb.textContent='✓ 確認 '+live.a+' : '+live.b;
 }
