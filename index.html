@@ -2,14 +2,8 @@
 <html lang="zh-TW">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>🏸 羽球積分板</title>
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="apple-mobile-web-app-title" content="羽球積分板">
-<meta name="theme-color" content="#185FA5">
-<link rel="manifest" href="manifest.json">
-<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🏸 羽球積分板｜Aceternity Light</title>
 <style>
 
 :root{
@@ -607,7 +601,9 @@ function createSession(){
   sessions.push(s);
   document.getElementById('newSessName').value='';
   activeSessionId=s.id;
-  pushToCloud(()=>{renderSessList();renderSessContent(s.id);});
+  localSave();
+  renderSessList();
+  renderSessContent(s.id);
 }
 
 function selectSess(id){activeSessionId=id;renderSessList();renderSessContent(id);}
@@ -625,32 +621,51 @@ function renderSessContent(id){
   const el=document.getElementById('sessContent');
   let html='';
 
-  // 出席名單
-  html+=`<div class="card">
-    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px">
-      <p style="font-size:15px;font-weight:500">${s.name}</p>
-      <span style="font-size:12px;color:#888">${fmtDate(s.date)}</span>
-    </div>
-    <p class="lbl">勾選今天出席的選手</p>
-    <div class="p-grid">`;
-  players.forEach(p=>{
-    const on=(s.attendees||[]).includes(p);
-    html+=`<div class="p-chip${on?' on':''}" onclick="toggleAttend('${id}','${p.replace(/'/g,"\\'")}',this)" data-name="${p}"><div class="dot"></div>${p}</div>`;
-  });
-  html+=`</div><span style="font-size:12px;color:#888" id="ac_${id}">${(s.attendees||[]).length} 人出席</span></div>`;
+  // 步驟一：出席名單
+  if(!s.attendeesConfirmed){
+    html+=`<div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+        <p style="font-size:15px;font-weight:500">${s.name}</p>
+        <span style="font-size:12px;color:#888">${fmtDate(s.date)}</span>
+      </div>
+      <p class="lbl">步驟一：勾選今天出席的選手</p>
+      <div class="p-grid">`;
+    players.forEach(p=>{
+      const on=(s.attendees||[]).includes(p);
+      html+=`<div class="p-chip${on?' on':''}" onclick="toggleAttend('${id}','${p.replace(/'/g,"\'")}',this)" data-name="${p}"><div class="dot"></div>${p}</div>`;
+    });
+    html+=`</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:12px;flex-wrap:wrap;gap:8px">
+        <span style="font-size:13px;color:#888" id="ac_${id}">${(s.attendees||[]).length} 人出席</span>
+        <button type="button" class="btn primary" onclick="confirmAttendees('${id}')"
+          ${(s.attendees||[]).length<4?'disabled style="opacity:0.45;cursor:not-allowed"':''}>
+          確認出席 →
+        </button>
+      </div>
+    </div>`;
+  } else {
+    html+=`<div class="card" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+      <div>
+        <p style="font-size:15px;font-weight:500">${s.name}
+          <span style="font-size:12px;color:#888;font-weight:400;margin-left:6px">${fmtDate(s.date)}</span>
+        </p>
+        <p style="font-size:13px;color:#888;margin-top:4px">出席 ${(s.attendees||[]).length} 人：${(s.attendees||[]).join('、')}</p>
+      </div>
+      <button type="button" class="btn sm" onclick="editAttendees('${id}')">重新編輯</button>
+    </div>`;
+  }
 
-  // 抽籤 + 比賽
-  if(s.attendees&&s.attendees.length>=4){
+  // 步驟二：抽籤（確認出席後才顯示）
+  if(s.attendeesConfirmed && s.attendees&&s.attendees.length>=4){
     const playCount={};
     s.attendees.forEach(p=>playCount[p]=0);
-    // 顯示上場次數：已確認 + 進行中都計入（抽完籤就立刻顯示）
     (s.matches||[]).forEach(m=>{
       [...m.teamA,...m.teamB].forEach(p=>{if(playCount[p]!==undefined)playCount[p]++;});
     });
 
     html+=`<div class="card">
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px">
-        <p class="lbl" style="margin-bottom:0">本次 ${(s.matches||[]).length} 場</p>
+        <p class="lbl" style="margin-bottom:0">步驟二：安排賽程（本次 ${(s.matches||[]).length} 場）</p>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
           <button type="button" class="btn primary" onclick="addMatchCourt('${id}','A')">＋ 場地 A</button>
           <button type="button" class="btn courtB" onclick="addMatchCourt('${id}','B')">＋ 場地 B</button>
@@ -669,6 +684,8 @@ function renderSessContent(id){
     }else{
       html+=`<p style="text-align:center;padding:1.5rem;color:#aaa;font-size:13px">按「＋ 場地 A」開始抽籤</p>`;
     }
+    html+=`</div>`;
+
     html+=`</div>`;
 
     // 小結
@@ -794,7 +811,37 @@ function toggleAttend(sid,name,el){
   s.attendees=[];
   document.querySelectorAll('.p-chip.on').forEach(c=>s.attendees.push(c.dataset.name));
   const ac=document.getElementById('ac_'+sid);if(ac)ac.textContent=s.attendees.length+' 人出席';
-  pushToCloud(()=>{renderSessList();});
+  // 即時更新確認按鈕狀態
+  const cfBtn=document.querySelector(`button[onclick="confirmAttendees('${sid}')"]`);
+  if(cfBtn){
+    if(s.attendees.length<4){cfBtn.disabled=true;cfBtn.style.opacity='0.4';}
+    else{cfBtn.disabled=false;cfBtn.style.opacity='';}
+  }
+  localSave();
+}
+
+function confirmAttendees(sid){
+  const s=getSess(sid);if(!s)return;
+  if((s.attendees||[]).length<4){alert('需要至少 4 人');return;}
+  s.attendeesConfirmed=true;
+  localSave();
+  renderSessContent(sid);
+  // 自動滑到賽程區
+  setTimeout(()=>{
+    const el=document.getElementById('sessContent');
+    if(el)el.scrollIntoView({behavior:'smooth',block:'start'});
+  },100);
+}
+
+function editAttendees(sid){
+  const s=getSess(sid);if(!s)return;
+  if(s.matches&&s.matches.length>0){
+    if(!confirm('重新編輯出席會清除已抽的賽程，確定嗎？'))return;
+    s.matches=[];
+  }
+  s.attendeesConfirmed=false;
+  localSave();
+  renderSessContent(sid);
 }
 
 function addMatchCourt(sid,court){
@@ -810,7 +857,9 @@ function addMatchCourt(sid,court){
   m.court=court;
   liveScores[m.id]={a:0,b:0};
   s.matches.push(m);
-  pushToCloud(()=>{renderSessContent(sid);renderSessList();});
+  localSave(); // 抽籤只存本地，確認比分時才同步雲端
+  renderSessContent(sid);
+  renderSessList();
 }
 
 function delMatch(sid,mi){
@@ -818,7 +867,9 @@ function delMatch(sid,mi){
   if(!confirm('確定移除這場？'))return;
   const m=s.matches[mi];if(m)delete liveScores[m.id];
   s.matches.splice(mi,1);
-  pushToCloud(()=>{renderSessContent(sid);renderSessList();});
+  localSave();
+  renderSessContent(sid);
+  renderSessList();
 }
 
 /* ================================================
@@ -868,7 +919,10 @@ function renderHistory(){
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px">
         <div><span style="font-size:15px;font-weight:500">${s.name||'未命名'}</span>
           <span style="font-size:12px;color:#888;margin-left:8px">${fmtDate(s.date)}</span></div>
-        <span style="font-size:12px;color:#aaa">${(s.attendees||[]).length}人 · ${(s.matches||[]).length}場</span>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-size:12px;color:#aaa">${(s.attendees||[]).length}人 · ${(s.matches||[]).length}場</span>
+          <button type="button" class="btn sm danger" onclick="requireAdmin(()=>deleteSess('${s.id}'))">刪除</button>
+        </div>
       </div>`;
     if(sorted.length&&scored.length){
       html+=`<table class="h-table" style="margin-bottom:10px"><thead><tr><th>排名</th><th>選手</th><th>勝場</th><th class="r">積分</th></tr></thead><tbody>`;
@@ -980,11 +1034,6 @@ const nd=document.getElementById('newDate');
 if(nd)nd.value=today.getFullYear()+'-'+String(today.getMonth()+1).padStart(2,'0')+'-'+String(today.getDate()).padStart(2,'0');
 pullFromCloud();
 setInterval(pullFromCloud,30000);
-</script>
-<script>
-if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('sw.js').catch(()=>{});
-}
 </script>
 </body>
 </html>
