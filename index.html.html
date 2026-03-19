@@ -1,0 +1,911 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🏸 羽球積分板</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang TC','Microsoft JhengHei',sans-serif;background:#f5f5f3;color:#1a1a18;min-height:100vh;padding:1rem}
+.app{max-width:800px;margin:0 auto}
+.card{background:#fff;border:1px solid #e0dfd8;border-radius:14px;padding:1.25rem;margin-bottom:1rem}
+.topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem;flex-wrap:wrap;gap:8px}
+.app-title{font-size:20px;font-weight:500}
+.sync-badge{font-size:12px;padding:3px 10px;border-radius:8px;border:1px solid #e0dfd8;background:#f9f9f7;color:#888;cursor:pointer}
+.sync-badge.ok{background:#E1F5EE;border-color:#9FE1CB;color:#0F6E56}
+.sync-badge.err{background:#FCEBEB;border-color:#F7C1C1;color:#A32D2D}
+.sync-badge.loading{background:#E6F1FB;border-color:#B5D4F4;color:#185FA5}
+.tab-nav{display:flex;border-bottom:1px solid #e0dfd8;margin-bottom:1.25rem;overflow-x:auto}
+.tab-nav button{flex-shrink:0;font-size:13px;padding:8px 14px;border:none;background:transparent;cursor:pointer;color:#888;border-bottom:2px solid transparent;margin-bottom:-1px;font-family:inherit;white-space:nowrap}
+.tab-nav button.on{color:#185FA5;border-bottom-color:#185FA5;font-weight:500}
+.btn{font-size:13px;padding:6px 14px;border-radius:8px;border:1px solid #ccc;background:transparent;color:#1a1a18;cursor:pointer;font-family:inherit}
+.btn:hover{background:#f1efe8}
+.btn.primary{background:#185FA5;color:#fff;border-color:#185FA5}
+.btn.primary:hover{background:#0C447C}
+.btn.success{background:#1D9E75;color:#fff;border-color:#1D9E75}
+.btn.success:hover{background:#0F6E56}
+.btn.courtB{background:#fff;color:#1D9E75;border-color:#1D9E75}
+.btn.courtB:hover{background:#E1F5EE}
+.btn.sm{padding:3px 9px;font-size:12px}
+.btn.danger{color:#A32D2D;border-color:#F7C1C1}
+.btn.danger:hover{background:#FCEBEB}
+input[type=text],input[type=number],input[type=date],input[type=password]{font-size:13px;padding:6px 10px;border-radius:8px;border:1px solid #ccc;background:#fff;color:#1a1a18;font-family:inherit}
+input:focus{outline:2px solid #185FA5;border-color:#185FA5}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:1rem}
+.lbl{font-size:12px;color:#888;margin-bottom:6px}
+/* 出席 */
+.p-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(88px,1fr));gap:8px;margin-bottom:10px}
+.p-chip{display:flex;align-items:center;gap:6px;padding:7px 10px;border-radius:8px;border:1px solid #e0dfd8;cursor:pointer;user-select:none;font-size:13px;transition:all 0.15s}
+.p-chip.on{background:#E6F1FB;border-color:#185FA5;color:#0C447C;font-weight:500}
+.p-chip .dot{width:8px;height:8px;border-radius:50%;background:#ccc;flex-shrink:0}
+.p-chip.on .dot{background:#185FA5}
+/* 上場次數 */
+.pc-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(75px,1fr));gap:6px;margin-bottom:10px}
+.pc-chip{text-align:center;padding:5px 4px;border-radius:8px;border:1px solid #e0dfd8;background:#fff}
+.pc-chip .pcn{font-size:12px;font-weight:500;color:#1a1a18}
+.pc-chip .pcc{font-size:11px;color:#888}
+/* 比賽卡片 */
+.match-list{display:flex;flex-direction:column;gap:10px}
+.match-card{border:1px solid #e0dfd8;border-radius:12px;overflow:hidden}
+.match-card.ca{border-top:3px solid #185FA5}
+.match-card.cb{border-top:3px solid #1D9E75}
+.match-card.done{opacity:0.82}
+.mc-head{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:#f9f9f7;border-bottom:1px solid #e0dfd8}
+.mc-lbl{font-size:12px;font-weight:500;color:#888}
+.mc-lbl.a{color:#185FA5}
+.mc-lbl.b{color:#1D9E75}
+/* 記分板 */
+.sb{display:flex;align-items:center;padding:14px 10px;gap:6px}
+.sb-side{flex:1;display:flex;flex-direction:column;align-items:center;gap:8px;min-width:0}
+.sb-names{font-size:13px;font-weight:500;text-align:center;line-height:1.6;word-break:break-word}
+.sb-names.win{color:#0F6E56}
+.sb-names.lose{color:#bbb}
+.sb-score{font-size:46px;font-weight:500;line-height:1}
+.sb-score.leading{color:#185FA5}
+.sb-btns{display:flex;gap:8px}
+.sb-btn{width:40px;height:40px;border-radius:50%;border:1px solid #e0dfd8;background:#fff;font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1}
+.sb-btn:active{transform:scale(0.9)}
+.sb-btn.plus{border-color:#185FA5;color:#185FA5}
+.sb-btn.minus{border-color:#F7C1C1;color:#A32D2D}
+.sb-vs{color:#aaa;font-size:13px;flex-shrink:0;padding:0 2px}
+.sb-confirm{display:flex;justify-content:center;flex-wrap:wrap;gap:8px;padding:10px 12px;background:#f9f9f7;border-top:1px solid #e0dfd8}
+.waiting-bar{display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:7px 12px;background:#f1efe8;border-top:1px solid #e0dfd8;font-size:12px;color:#888}
+.w-chip{font-size:12px;padding:2px 8px;border-radius:12px;background:#fff;border:1px solid #e0dfd8;color:#444}
+/* 排行榜 */
+.metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:1.25rem}
+.metric{background:#f1efe8;border-radius:8px;padding:9px 12px}
+.metric .ml{font-size:11px;color:#888;margin-bottom:3px}
+.metric .mv{font-size:18px;font-weight:500}
+.rank-list{display:flex;flex-direction:column;gap:6px}
+.rank-row{display:flex;align-items:center;gap:10px;padding:10px 12px;background:#fff;border:1px solid #e0dfd8;border-radius:12px}
+.rank-pos{width:26px;font-size:13px;font-weight:500;color:#888;text-align:center;flex-shrink:0}
+.rank-pos.gold{color:#BA7517}
+.rank-pos.silver{color:#5F5E5A}
+.rank-pos.bronze{color:#993C1D}
+.avatar{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:500;flex-shrink:0}
+.rank-name{flex:1;font-size:14px}
+.rank-pts{font-size:15px;font-weight:500;min-width:36px;text-align:right}
+.bar-track{flex:1;height:5px;background:#f1efe8;border-radius:3px;overflow:hidden;min-width:40px}
+.bar-fill{height:100%;border-radius:3px;transition:width 0.65s ease}
+/* 場次列表 */
+.sess-list{display:flex;flex-direction:column;gap:6px;margin-bottom:1rem}
+.sess-item{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;border:1px solid #e0dfd8;cursor:pointer;background:#fff;transition:all 0.15s}
+.sess-item:hover{background:#f9f9f7}
+.sess-item.on{border-color:#185FA5;background:#E6F1FB}
+.sess-date{font-size:12px;color:#888;flex-shrink:0;min-width:68px}
+.sess-name{flex:1;font-size:14px;font-weight:500}
+.sess-meta{font-size:12px;color:#aaa;flex-shrink:0}
+.sess-del{font-size:12px;padding:3px 8px;border-radius:6px;border:1px solid #F7C1C1;background:transparent;color:#A32D2D;cursor:pointer;font-family:inherit;opacity:0;transition:opacity 0.15s}
+.sess-item:hover .sess-del{opacity:1}
+/* 歷史 */
+.hist-card{background:#fff;border:1px solid #e0dfd8;border-radius:12px;padding:12px 14px;margin-bottom:10px}
+.h-table{width:100%;border-collapse:collapse;font-size:13px}
+.h-table th{font-size:12px;color:#888;padding:5px 8px;border-bottom:1px solid #e0dfd8;text-align:left;font-weight:500}
+.h-table td{padding:7px 8px;border-bottom:1px solid #e0dfd8}
+.h-table tr:last-child td{border-bottom:none}
+.h-table td.r{text-align:right}
+.mrow{display:flex;align-items:center;gap:8px;padding:8px 10px;background:#f9f9f7;border:1px solid #e0dfd8;border-radius:8px;font-size:13px;margin-bottom:5px}
+/* 未排定 */
+.upcoming-card{background:#fff;border:1px solid #e0dfd8;border-radius:12px;padding:12px 14px;margin-bottom:10px}
+.upcoming-match{display:flex;align-items:center;gap:8px;padding:8px 10px;background:#f9f9f7;border:1px solid #e0dfd8;border-radius:8px;font-size:13px;margin-bottom:5px}
+/* 密碼彈窗 */
+.modal-bg{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.35);z-index:100;display:flex;align-items:center;justify-content:center}
+.modal{background:#fff;border-radius:16px;padding:1.5rem;width:min(340px,90vw);display:flex;flex-direction:column;gap:12px}
+.modal h2{font-size:16px;font-weight:500}
+.modal .err{font-size:12px;color:#A32D2D;min-height:16px}
+/* 設定 */
+.player-row{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #e0dfd8}
+.pts-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px}
+.pts-card{background:#fff;border:1px solid #e0dfd8;border-radius:8px;padding:8px 12px;display:flex;align-items:center;justify-content:space-between;gap:6px;font-size:13px}
+.empty{text-align:center;padding:2rem;color:#aaa;font-size:14px}
+.spinner{display:inline-block;width:14px;height:14px;border:2px solid #e0dfd8;border-top-color:#185FA5;border-radius:50%;animation:spin 0.7s linear infinite;vertical-align:middle;margin-right:4px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.divider{border:none;border-top:1px solid #e0dfd8;margin:10px 0}
+@media(max-width:480px){.metrics{grid-template-columns:1fr 1fr}.metric:last-child{display:none}.sb-score{font-size:38px}}
+</style>
+</head>
+<body>
+<div class="app">
+
+<!-- 密碼彈窗 -->
+<div class="modal-bg" id="pwModal" style="display:none">
+  <div class="modal">
+    <h2>🔒 管理員驗證</h2>
+    <input type="password" id="pwInput" placeholder="輸入管理密碼">
+    <div class="err" id="pwErr"></div>
+    <div class="row" style="margin-bottom:0;justify-content:flex-end">
+      <button type="button" class="btn" onclick="closePwModal()">取消</button>
+      <button type="button" class="btn primary" onclick="submitPw()">確認</button>
+    </div>
+  </div>
+</div>
+
+<div class="topbar">
+  <span class="app-title">🏸 羽球積分板</span>
+  <span class="sync-badge" id="syncBadge" onclick="pullFromCloud()"><span class="spinner"></span>讀取中</span>
+</div>
+<div class="tab-nav">
+  <button type="button" class="on" onclick="showTab('rank')">排行榜</button>
+  <button type="button" onclick="showTab('play')">今日賽程</button>
+  <button type="button" onclick="showTab('upcoming')">待進行</button>
+  <button type="button" onclick="showTab('history')">歷史紀錄</button>
+  <button type="button" onclick="requireAdmin(()=>showTab('settings'))">⚙ 設定</button>
+</div>
+
+<!-- 排行榜 -->
+<div id="tab-rank">
+  <div class="metrics" id="metricCards">
+    <div class="metric"><div class="ml">讀取中</div><div class="mv">—</div></div>
+    <div class="metric"><div class="ml">活動場次</div><div class="mv">—</div></div>
+    <div class="metric"><div class="ml">參賽人數</div><div class="mv">—</div></div>
+  </div>
+  <div class="rank-list" id="rankList"></div>
+</div>
+
+<!-- 今日賽程 -->
+<div id="tab-play" style="display:none">
+  <div class="card">
+    <p class="lbl" style="margin-bottom:10px">選擇或新增場次</p>
+    <div class="row">
+      <input type="date" id="newDate" style="width:140px">
+      <input type="text" id="newSessName" placeholder="場次名稱（可選）" style="flex:1;min-width:110px">
+      <button type="button" class="btn primary" onclick="createSession()">＋ 新增</button>
+    </div>
+    <div class="sess-list" id="sessList"></div>
+  </div>
+  <div id="sessContent"></div>
+</div>
+
+<!-- 待進行 -->
+<div id="tab-upcoming" style="display:none">
+  <div id="upcomingContent"></div>
+</div>
+
+<!-- 歷史紀錄 -->
+<div id="tab-history" style="display:none">
+  <div id="histContent"></div>
+</div>
+
+<!-- 設定（需密碼） -->
+<div id="tab-settings" style="display:none">
+  <div class="card">
+    <p class="lbl" style="margin-bottom:10px">選手名單</p>
+    <div class="row"><input type="text" id="newPlayerName" placeholder="新增選手姓名" style="width:150px"><button type="button" class="btn primary" onclick="addPlayer()">＋ 新增</button></div>
+    <div id="playerListEl"></div>
+  </div>
+  <div class="card">
+    <p class="lbl" style="margin-bottom:4px">計分規則</p>
+    <p style="font-size:12px;color:#aaa;margin-bottom:10px">贏一場 → 上場兩人各得分數</p>
+    <div class="row" style="margin-bottom:0">
+      <span style="font-size:13px">每勝得</span>
+      <input type="number" id="winPtsInput" min="1" max="10" value="2" style="width:60px" onchange="winPts=parseInt(this.value)||2;localSave()">
+      <span style="font-size:13px">分</span>
+    </div>
+  </div>
+  <div class="card">
+    <p class="lbl" style="margin-bottom:4px">雲端設定</p>
+    <p style="font-size:12px;color:#aaa;margin-bottom:8px">Google Apps Script Web App URL</p>
+    <input type="text" id="cfgUrl" placeholder="貼上 Web App URL" style="width:100%;margin-bottom:8px">
+    <button type="button" class="btn primary" onclick="saveCfg()">儲存並同步</button>
+  </div>
+  <div class="card">
+    <p class="lbl" style="margin-bottom:10px">備份與還原</p>
+    <div class="row" style="margin-bottom:0">
+      <button type="button" class="btn success" onclick="exportJSON()">📤 匯出備份</button>
+      <button type="button" class="btn" onclick="document.getElementById('importFile').click()">📂 匯入還原</button>
+      <button type="button" class="btn" onclick="exportCSV()">📥 匯出 CSV</button>
+      <input type="file" id="importFile" accept=".json" style="display:none" onchange="importJSON(event)">
+    </div>
+  </div>
+  <div class="card">
+    <p class="lbl" style="margin-bottom:10px">密碼管理</p>
+    <div class="row" style="margin-bottom:0">
+      <input type="password" id="newPwInput" placeholder="設定新密碼" style="width:160px">
+      <button type="button" class="btn" onclick="changePw()">更新密碼</button>
+    </div>
+  </div>
+  <div class="card">
+    <p class="lbl" style="margin-bottom:10px">危險操作</p>
+    <button type="button" class="btn danger" onclick="if(confirm('確定清除全部資料？'))clearAll()">清除全部資料</button>
+  </div>
+</div>
+</div>
+
+<script>
+/* ================================================
+   ★ 修改這裡 ★
+   ================================================ */
+const FIXED_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbwRjwm2aUz6gqLFdzJvQnoU1_Qh0qwdO5YTXiYU-wdn_P7zlrOBWNnKSD6ql2RLFp1f/exec';
+const DEFAULT_PLAYERS   = ['Yinglee','YC黃','伍彬彬','劉部長','小羅','小寶','雅瑄','宜芳','JOJO','詠婕','語喬'];
+const WIN_PTS_DEFAULT   = 2;
+
+/* ================================================
+   色彩
+   ================================================ */
+const AV_BG=['#B5D4F4','#C0DD97','#FAC775','#F4C0D1','#9FE1CB','#CECBF6','#F5C4B3','#F7C1C1','#D3D1C7','#EF9F27','#85B7EB'];
+const AV_FG=['#0C447C','#27500A','#633806','#72243E','#085041','#3C3489','#712B13','#791F1F','#444441','#412402','#042C53'];
+function avBg(i){return AV_BG[i%AV_BG.length];}
+function avFg(i){return AV_FG[i%AV_FG.length];}
+function initials(n){return n.trim().slice(0,2).toUpperCase();}
+
+/* ================================================
+   狀態
+   ================================================ */
+let players=[], sessions=[], winPts=WIN_PTS_DEFAULT;
+let activeSessionId=null, adminUnlocked=false, pendingAdminAction=null;
+const liveScores={};
+let WEB_APP_URL=FIXED_WEB_APP_URL||localStorage.getItem('bm_url')||'';
+
+function genId(){return Date.now().toString(36)+Math.random().toString(36).slice(2,6);}
+function fmtDate(d){if(!d)return'';const p=d.split('-');return p[0]+'/'+(+p[1])+'/'+(+p[2]);}
+function fmtNow(){const t=new Date();return t.getHours()+':'+String(t.getMinutes()).padStart(2,'0');}
+function getSess(id){return sessions.find(s=>s.id===id);}
+
+/* ================================================
+   密碼管理
+   ================================================ */
+function getStoredPw(){return localStorage.getItem('bm_pw')||'';}
+function requireAdmin(action){
+  if(adminUnlocked){action();return;}
+  pendingAdminAction=action;
+  document.getElementById('pwModal').style.display='flex';
+  setTimeout(()=>document.getElementById('pwInput').focus(),100);
+}
+function submitPw(){
+  const pw=document.getElementById('pwInput').value;
+  const stored=getStoredPw();
+  if(!stored){
+    localStorage.setItem('bm_pw',pw);
+    adminUnlocked=true;
+    closePwModal();
+    if(pendingAdminAction){pendingAdminAction();pendingAdminAction=null;}
+    return;
+  }
+  if(pw===stored){
+    adminUnlocked=true;closePwModal();
+    if(pendingAdminAction){pendingAdminAction();pendingAdminAction=null;}
+  }else{
+    document.getElementById('pwErr').textContent='密碼錯誤';
+    setTimeout(()=>document.getElementById('pwErr').textContent='',2000);
+  }
+}
+function closePwModal(){
+  document.getElementById('pwModal').style.display='none';
+  document.getElementById('pwInput').value='';
+}
+function changePw(){
+  const np=document.getElementById('newPwInput').value.trim();
+  if(!np){alert('請輸入新密碼');return;}
+  localStorage.setItem('bm_pw',np);
+  document.getElementById('newPwInput').value='';
+  alert('密碼已更新！');
+}
+document.getElementById('pwInput').addEventListener('keydown',e=>{if(e.key==='Enter')submitPw();});
+
+/* ================================================
+   本地存取
+   ================================================ */
+function localSave(){
+  localStorage.setItem('bm_players',JSON.stringify(players));
+  localStorage.setItem('bm_sessions',JSON.stringify(sessions));
+  localStorage.setItem('bm_winPts',String(winPts));
+}
+function localLoad(){
+  players=JSON.parse(localStorage.getItem('bm_players')||'null')||DEFAULT_PLAYERS.slice();
+  sessions=JSON.parse(localStorage.getItem('bm_sessions')||'[]');
+  winPts=parseInt(localStorage.getItem('bm_winPts')||String(WIN_PTS_DEFAULT))||WIN_PTS_DEFAULT;
+  WEB_APP_URL=FIXED_WEB_APP_URL||localStorage.getItem('bm_url')||'';
+}
+
+/* ================================================
+   雲端同步
+   ================================================ */
+function setSyncBadge(state,txt){
+  const el=document.getElementById('syncBadge');
+  el.className='sync-badge';
+  el.innerHTML=txt||state;
+  if(state==='ok')el.classList.add('ok');
+  else if(state==='err')el.classList.add('err');
+  else if(state==='loading')el.innerHTML='<span class="spinner"></span>'+(txt||'讀取中');
+}
+async function pullFromCloud(){
+  if(!WEB_APP_URL||WEB_APP_URL==='YOUR_WEB_APP_URL_HERE'){setSyncBadge('err','未設定 URL');renderAll();return;}
+  setSyncBadge('loading');
+  try{
+    const res=await fetch(WEB_APP_URL+'?action=getData&t='+Date.now());
+    const data=await res.json();
+    if(!data.ok)throw new Error(data.error||'讀取失敗');
+    // 只在雲端資料較新時才覆蓋（以場次數量判斷）
+    const cloudSessCount=(data.sessions||[]).length;
+    const localSessCount=sessions.length;
+    if(cloudSessCount>=localSessCount){
+      if(data.players&&data.players.length>0)players=data.players;
+      if(data.sessions)sessions=data.sessions;
+      if(data.winPts)winPts=data.winPts;
+    }
+    localSave();
+    setSyncBadge('ok','同步 '+fmtNow());
+    renderAll();
+  }catch(e){setSyncBadge('err','同步失敗 (點擊重試)');renderAll();}
+}
+async function pushToCloud(cb){
+  if(!WEB_APP_URL||WEB_APP_URL==='YOUR_WEB_APP_URL_HERE'){localSave();if(cb)cb();return;}
+  setSyncBadge('loading','儲存中');
+  try{
+    const res=await fetch(WEB_APP_URL,{method:'POST',body:JSON.stringify({
+      action:'saveAll',password:localStorage.getItem('bm_pw')||'__public__',
+      players,sessions,winPts,ranking:getTotals()
+    })});
+    const json=await res.json();
+    if(json.ok){localSave();setSyncBadge('ok','同步 '+fmtNow());if(cb)cb();}
+    else{localSave();setSyncBadge('err','雲端失敗');if(cb)cb();}
+  }catch(e){localSave();setSyncBadge('err','連線失敗');if(cb)cb();}
+}
+function saveCfg(){
+  const u=(document.getElementById('cfgUrl')||{}).value.trim();
+  if(u){WEB_APP_URL=u;localStorage.setItem('bm_url',u);}
+  pushToCloud(()=>alert('設定已儲存！'));
+}
+
+/* ================================================
+   統計
+   ================================================ */
+function calcScore(s){
+  const sc={};(s.attendees||[]).forEach(p=>sc[p]=0);
+  (s.matches||[]).forEach(m=>{
+    const sa=parseInt(m.scoreA),sb=parseInt(m.scoreB);if(isNaN(sa)||isNaN(sb))return;
+    if(sa>sb)(m.teamA||[]).forEach(p=>{if(sc[p]!==undefined)sc[p]+=winPts;});
+    else if(sb>sa)(m.teamB||[]).forEach(p=>{if(sc[p]!==undefined)sc[p]+=winPts;});
+  });
+  return sc;
+}
+function calcWins(s){
+  const w={};(s.attendees||[]).forEach(p=>w[p]=0);
+  (s.matches||[]).forEach(m=>{
+    const sa=parseInt(m.scoreA),sb=parseInt(m.scoreB);if(isNaN(sa)||isNaN(sb))return;
+    if(sa>sb)(m.teamA||[]).forEach(p=>{if(w[p]!==undefined)w[p]++;});
+    else if(sb>sa)(m.teamB||[]).forEach(p=>{if(w[p]!==undefined)w[p]++;});
+  });
+  return w;
+}
+function getTotals(){
+  return players.map((p,pi)=>{
+    let total=0,sessCount=0,wins=0;
+    sessions.forEach(s=>{
+      if(!(s.attendees||[]).includes(p))return;
+      const sc=calcScore(s);const w=calcWins(s);
+      if(sc[p]!==undefined){total+=sc[p];sessCount++;wins+=w[p]||0;}
+    });
+    return{name:p,total,sessCount,wins,idx:pi};
+  }).sort((a,b)=>b.total-a.total||a.name.localeCompare(b.name));
+}
+
+/* ================================================
+   抽籤
+   ================================================ */
+function shuffle(arr){const a=[...arr];for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
+
+function drawMatch(attendees,existingMatches,excludePlayers){
+  excludePlayers=excludePlayers||[];
+  const avail=attendees.filter(p=>!excludePlayers.includes(p));
+  if(avail.length<4)return null;
+
+  // 上場次數：所有已抽的場次都算（含進行中），抽完籤就算上場
+  const playCount={};
+  attendees.forEach(p=>playCount[p]=0);
+  (existingMatches||[]).forEach(m=>{
+    [...m.teamA,...m.teamB].forEach(p=>{if(playCount[p]!==undefined)playCount[p]++;});
+  });
+
+  // 同隊次數：所有已抽的場次都算
+  const pairCount={};
+  (existingMatches||[]).forEach(m=>{
+    [[m.teamA[0],m.teamA[1]],[m.teamB[0],m.teamB[1]]].forEach(function(pair){
+      var a=pair[0],b=pair[1];if(!a||!b)return;
+      var key=[a,b].sort().join('|');pairCount[key]=(pairCount[key]||0)+1;
+    });
+  });
+
+  const sorted=[...avail].sort((a,b)=>playCount[a]-playCount[b]);
+  const minC=playCount[sorted[0]];
+  // 取上場次數最少的人優先
+  const pool=sorted.filter(p=>playCount[p]<=minC);
+  const cands=(pool.length>=4?pool:sorted).slice(0,Math.max(4,pool.length));
+  const picked=shuffle(cands).slice(0,4);
+  const combos=[[[picked[0],picked[1]],[picked[2],picked[3]]],[[picked[0],picked[2]],[picked[1],picked[3]]],[[picked[0],picked[3]],[picked[1],picked[2]]]];
+  const gps=(a,b)=>pairCount[[a,b].sort().join('|')]||0;
+  combos.sort((x,y)=>(gps(x[0][0],x[0][1])+gps(x[1][0],x[1][1]))-(gps(y[0][0],y[0][1])+gps(y[1][0],y[1][1])));
+  const teamA=combos[0][0],teamB=combos[0][1];
+  const waiting=attendees.filter(p=>![...teamA,...teamB,...excludePlayers].includes(p));
+  return{id:genId(),teamA,teamB,waiting,scoreA:'',scoreB:''};
+}
+
+/* ================================================
+   頁籤
+   ================================================ */
+function showTab(t){
+  ['rank','play','upcoming','history','settings'].forEach(id=>{
+    const el=document.getElementById('tab-'+id);if(el)el.style.display=id===t?'':'none';
+  });
+  document.querySelectorAll('.tab-nav button').forEach((b,i)=>{
+    b.classList.toggle('on',['rank','play','upcoming','history','settings'][i]===t);
+  });
+  if(t==='upcoming')renderUpcoming();
+  if(t==='history')renderHistory();
+  if(t==='settings')renderSettings();
+}
+function renderAll(){
+  renderRank();renderSessList();
+  if(activeSessionId)renderSessContent(activeSessionId);
+}
+
+/* ================================================
+   排行榜
+   ================================================ */
+function renderRank(){
+  const totals=getTotals();
+  const maxScore=Math.max(...totals.map(t=>t.total),1);
+  document.getElementById('metricCards').innerHTML=`
+    <div class="metric"><div class="ml">目前領先</div><div class="mv">${totals[0]&&totals[0].total>0?totals[0].name:'—'}</div></div>
+    <div class="metric"><div class="ml">活動場次</div><div class="mv">${sessions.length}</div></div>
+    <div class="metric"><div class="ml">參賽人數</div><div class="mv">${players.length}</div></div>`;
+  const medals=['🥇','🥈','🥉'];
+  const rl=document.getElementById('rankList');rl.innerHTML='';
+  if(!players.length){rl.innerHTML='<div class="empty">尚無資料</div>';return;}
+  totals.forEach((p,i)=>{
+    const pct=Math.round(p.total/maxScore*100);
+    const div=document.createElement('div');div.className='rank-row';div.style.cssText='opacity:0;transform:translateY(10px)';
+    const pc=i===0?'gold':i===1?'silver':i===2?'bronze':'';
+    div.innerHTML=`<div class="rank-pos ${pc}">${medals[i]||('#'+(i+1))}</div>
+      <div class="avatar" style="background:${avBg(p.idx)};color:${avFg(p.idx)}">${initials(p.name)}</div>
+      <div class="rank-name">${p.name}<span style="font-size:11px;color:#aaa;margin-left:6px">${p.sessCount}場 · ${p.wins}勝</span></div>
+      <div class="bar-track"><div class="bar-fill" style="width:0%;background:${avFg(p.idx)}"></div></div>
+      <div class="rank-pts">${p.total}</div>`;
+    rl.appendChild(div);
+    setTimeout(()=>{div.style.cssText='transition:transform 0.4s cubic-bezier(.22,.68,0,1.2),opacity 0.35s;opacity:1;transform:translateY(0)';},i*55);
+    setTimeout(()=>{div.querySelector('.bar-fill').style.width=pct+'%';},i*55+180);
+  });
+}
+
+/* ================================================
+   今日賽程
+   ================================================ */
+function todayStr(){
+  const t=new Date();
+  return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0');
+}
+function isSessionActive(s){
+  // 今日賽程只顯示：1) 日期是今天 且 2) 尚未有任何已確認比分
+  const today=todayStr();
+  const hasScore=(s.matches||[]).some(m=>m.scoreA!==''&&m.scoreB!=='');
+  return s.date===today && !hasScore;
+}
+
+function renderSessList(){
+  const el=document.getElementById('sessList');
+  const active=[...sessions].reverse().filter(s=>isSessionActive(s));
+  if(!active.length){
+    el.innerHTML='<div class="empty" style="padding:1rem;font-size:13px;color:#aaa">目前沒有進行中的場次<br>已完成或過去的場次請到「歷史紀錄」查看</div>';
+    if(activeSessionId && !isSessionActive(getSess(activeSessionId))){
+      activeSessionId=null;
+      document.getElementById('sessContent').innerHTML='';
+    }
+    return;
+  }
+  let html='';
+  active.forEach(s=>{
+    const mc=(s.matches||[]).length;
+    html+=`<div class="sess-item${activeSessionId===s.id?' on':''}" onclick="selectSess('${s.id}')">
+      <div class="sess-date">${fmtDate(s.date)}</div>
+      <div class="sess-name">${s.name||'未命名'}</div>
+      <div class="sess-meta">${s.attendees?s.attendees.length+'人 ':''} ${mc?mc+'場':''}</div>
+      <button class="sess-del" onclick="event.stopPropagation();requireAdmin(()=>deleteSess('${s.id}'))">刪除</button>
+    </div>`;
+  });
+  el.innerHTML=html;
+}
+
+function createSession(){
+  const date=document.getElementById('newDate').value;
+  const name=document.getElementById('newSessName').value.trim();
+  if(!date){alert('請選擇日期');return;}
+  const s={id:genId(),date,name:name||fmtDate(date),attendees:[],matches:[]};
+  sessions.push(s);
+  document.getElementById('newSessName').value='';
+  activeSessionId=s.id;
+  pushToCloud(()=>{renderSessList();renderSessContent(s.id);});
+}
+
+function selectSess(id){activeSessionId=id;renderSessList();renderSessContent(id);}
+
+function deleteSess(id){
+  if(!confirm('確定刪除此場次？'))return;
+  sessions=sessions.filter(s=>s.id!==id);
+  if(activeSessionId===id){activeSessionId=null;document.getElementById('sessContent').innerHTML='';}
+  pushToCloud(()=>{renderSessList();renderRank();});
+}
+
+function renderSessContent(id){
+  const s=getSess(id);
+  if(!s){document.getElementById('sessContent').innerHTML='';return;}
+  const el=document.getElementById('sessContent');
+  let html='';
+
+  // 出席名單
+  html+=`<div class="card">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+      <p style="font-size:15px;font-weight:500">${s.name}</p>
+      <span style="font-size:12px;color:#888">${fmtDate(s.date)}</span>
+    </div>
+    <p class="lbl">勾選今天出席的選手</p>
+    <div class="p-grid">`;
+  players.forEach(p=>{
+    const on=(s.attendees||[]).includes(p);
+    html+=`<div class="p-chip${on?' on':''}" onclick="toggleAttend('${id}','${p.replace(/'/g,"\\'")}',this)" data-name="${p}"><div class="dot"></div>${p}</div>`;
+  });
+  html+=`</div><span style="font-size:12px;color:#888" id="ac_${id}">${(s.attendees||[]).length} 人出席</span></div>`;
+
+  // 抽籤 + 比賽
+  if(s.attendees&&s.attendees.length>=4){
+    const playCount={};
+    s.attendees.forEach(p=>playCount[p]=0);
+    // 顯示上場次數：已確認 + 進行中都計入（抽完籤就立刻顯示）
+    (s.matches||[]).forEach(m=>{
+      [...m.teamA,...m.teamB].forEach(p=>{if(playCount[p]!==undefined)playCount[p]++;});
+    });
+
+    html+=`<div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+        <p class="lbl" style="margin-bottom:0">本次 ${(s.matches||[]).length} 場</p>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button type="button" class="btn primary" onclick="addMatchCourt('${id}','A')">＋ 場地 A</button>
+          <button type="button" class="btn courtB" onclick="addMatchCourt('${id}','B')">＋ 場地 B</button>
+        </div>
+      </div>
+      <div class="pc-grid">`;
+    s.attendees.forEach(p=>{
+      html+=`<div class="pc-chip"><div class="pcn">${p}</div><div class="pcc">上場 ${playCount[p]} 次</div></div>`;
+    });
+    html+=`</div>`;
+
+    if(s.matches&&s.matches.length){
+      html+=`<div class="match-list">`;
+      s.matches.forEach((m,mi)=>{html+=renderMatchCard(s,m,mi);});
+      html+=`</div>`;
+    }else{
+      html+=`<p style="text-align:center;padding:1.5rem;color:#aaa;font-size:13px">按「＋ 場地 A」開始抽籤</p>`;
+    }
+    html+=`</div>`;
+
+    // 小結
+    const hasScored=(s.matches||[]).some(m=>m.scoreA!==''&&m.scoreB!=='');
+    if(hasScored){
+      const sc=calcScore(s);const wins=calcWins(s);
+      const sorted=[...s.attendees].sort((a,b)=>(sc[b]||0)-(sc[a]||0));
+      html+=`<div class="card"><p class="lbl" style="margin-bottom:10px">本場積分小結</p>
+        <table class="h-table"><thead><tr><th>排名</th><th>選手</th><th>勝場</th><th class="r">積分</th></tr></thead><tbody>`;
+      let rank=1;
+      sorted.forEach((p,i)=>{
+        if(i>0&&(sc[sorted[i]]||0)!==(sc[sorted[i-1]]||0))rank=i+1;
+        html+=`<tr><td>${rank}</td><td>${p}</td><td>${wins[p]||0}</td><td class="r"><strong>${sc[p]||0}</strong></td></tr>`;
+      });
+      html+=`</tbody></table></div>`;
+    }
+  }else if(s.attendees&&s.attendees.length>0){
+    html+=`<div class="card"><div class="empty">需要至少 4 人才能開始抽籤</div></div>`;
+  }
+  el.innerHTML=html;
+}
+
+function renderMatchCard(s,m,mi){
+  const live=liveScores[m.id]||{a:parseInt(m.scoreA)||0,b:parseInt(m.scoreB)||0};
+  const isDone=m.scoreA!==''&&m.scoreB!=='';
+  const sa=isDone?parseInt(m.scoreA):live.a;
+  const sb=isDone?parseInt(m.scoreB):live.b;
+  const aWin=sa>sb,bWin=sb>sa;
+  const court=m.court||'';
+  const nameA=(m.teamA||[]).join(' & ');
+  const nameB=(m.teamB||[]).join(' & ');
+  let body='';
+  if(isDone){
+    body=`<div class="sb">
+      <div class="sb-side">
+        <div class="sb-names${aWin?' win':bWin?' lose':''}">${(m.teamA||[]).join('<br>&amp; ')}</div>
+        <div class="sb-score${aWin?' leading':''}">${sa}</div>
+      </div>
+      <div class="sb-vs">:</div>
+      <div class="sb-side">
+        <div class="sb-score${bWin?' leading':''}">${sb}</div>
+        <div class="sb-names${bWin?' win':aWin?' lose':''}">${(m.teamB||[]).join('<br>&amp; ')}</div>
+      </div>
+    </div>`;
+  }else{
+    body=`<div class="sb">
+      <div class="sb-side">
+        <div class="sb-names">${(m.teamA||[]).join('<br>&amp; ')}</div>
+        <div class="sb-score${live.a>live.b?' leading':''}" id="la_${m.id}">${live.a}</div>
+        <div class="sb-btns">
+          <button type="button" class="sb-btn minus" onclick="adj('${s.id}','${m.id}','a',-1,${mi})">−</button>
+          <button type="button" class="sb-btn plus" onclick="adj('${s.id}','${m.id}','a',+1,${mi})">＋</button>
+        </div>
+      </div>
+      <div class="sb-vs">vs</div>
+      <div class="sb-side">
+        <div class="sb-score${live.b>live.a?' leading':''}" id="lb_${m.id}">${live.b}</div>
+        <div class="sb-names">${(m.teamB||[]).join('<br>&amp; ')}</div>
+        <div class="sb-btns">
+          <button type="button" class="sb-btn minus" onclick="adj('${s.id}','${m.id}','b',-1,${mi})">−</button>
+          <button type="button" class="sb-btn plus" onclick="adj('${s.id}','${m.id}','b',+1,${mi})">＋</button>
+        </div>
+      </div>
+    </div>
+    <div class="sb-confirm">
+      <button type="button" class="btn success" id="cfbtn_${m.id}" onclick="confirmScore('${s.id}','${m.id}')">✓ 確認 ${live.a} : ${live.b}</button>
+      <button type="button" class="btn sm danger" onclick="requireAdmin(()=>delMatch('${s.id}',${mi}))">移除</button>
+    </div>`;
+  }
+  return `<div class="match-card${court?' c'+court.toLowerCase():''}${isDone?' done':''}" id="mc_${s.id}_${mi}">
+    <div class="mc-head">
+      <span class="mc-lbl${court?' '+court.toLowerCase():''}">${court?'場地 '+court+' · ':''}第 ${mi+1} 場${isDone?' ✓':''}</span>
+      ${isDone?`<button type="button" class="btn sm danger" onclick="undoScore('${s.id}','${m.id}',${mi})">重打</button>`:''}
+    </div>
+    ${body}
+    ${m.waiting&&m.waiting.length?`<div class="waiting-bar">等待：${m.waiting.map(p=>'<span class="w-chip">'+p+'</span>').join('')}</div>`:''}
+  </div>`;
+}
+
+function adj(sid,mid,side,delta,mi){
+  if(!liveScores[mid])liveScores[mid]={a:0,b:0};
+  liveScores[mid][side]=Math.max(0,liveScores[mid][side]+delta);
+  const live=liveScores[mid];
+  const la=document.getElementById('la_'+mid);
+  const lb=document.getElementById('lb_'+mid);
+  if(la){la.textContent=live.a;la.className='sb-score'+(live.a>live.b?' leading':'');}
+  if(lb){lb.textContent=live.b;lb.className='sb-score'+(live.b>live.a?' leading':'');}
+  const cb=document.getElementById('cfbtn_'+mid);
+  if(cb)cb.textContent='✓ 確認 '+live.a+' : '+live.b;
+}
+
+function confirmScore(sid,mid){
+  const s=getSess(sid);if(!s)return;
+  const m=s.matches.find(mm=>mm.id===mid);if(!m)return;
+  const live=liveScores[mid]||{a:0,b:0};
+  if(live.a===0&&live.b===0&&!confirm('比分都是 0，確定？'))return;
+  m.scoreA=String(live.a);m.scoreB=String(live.b);
+  delete liveScores[mid];
+  pushToCloud(()=>{
+    const s=getSess(sid);
+    if(s && !isSessionActive(s)){
+      activeSessionId=null;
+      document.getElementById('sessContent').innerHTML='';
+    } else {
+      renderSessContent(sid);
+    }
+    renderRank();renderSessList();renderHistory();
+  });
+}
+
+function undoScore(sid,mid,mi){
+  if(!confirm('確定重打？比分將清除。'))return;
+  const s=getSess(sid);if(!s)return;
+  const m=s.matches.find(mm=>mm.id===mid);if(!m)return;
+  liveScores[mid]={a:parseInt(m.scoreA)||0,b:parseInt(m.scoreB)||0};
+  m.scoreA='';m.scoreB='';
+  pushToCloud(()=>{renderSessContent(sid);renderRank();renderSessList();});
+}
+
+function toggleAttend(sid,name,el){
+  const s=getSess(sid);if(!s)return;
+  el.classList.toggle('on');
+  s.attendees=[];
+  document.querySelectorAll('.p-chip.on').forEach(c=>s.attendees.push(c.dataset.name));
+  const ac=document.getElementById('ac_'+sid);if(ac)ac.textContent=s.attendees.length+' 人出席';
+  pushToCloud(()=>{renderSessList();});
+}
+
+function addMatchCourt(sid,court){
+  const s=getSess(sid);if(!s||!s.attendees||s.attendees.length<4)return;
+  let exclude=[];
+  if(court==='B'&&s.matches.length>0){
+    const last=s.matches[s.matches.length-1];
+    if(last.court==='A')exclude=[...last.teamA,...last.teamB];
+  }
+  if(s.attendees.filter(p=>!exclude.includes(p)).length<4){alert('可用人數不足 4 人');return;}
+  const m=drawMatch(s.attendees,s.matches,exclude);
+  if(!m){alert('無法抽籤');return;}
+  m.court=court;
+  liveScores[m.id]={a:0,b:0};
+  s.matches.push(m);
+  pushToCloud(()=>{renderSessContent(sid);renderSessList();});
+}
+
+function delMatch(sid,mi){
+  const s=getSess(sid);if(!s)return;
+  if(!confirm('確定移除這場？'))return;
+  const m=s.matches[mi];if(m)delete liveScores[m.id];
+  s.matches.splice(mi,1);
+  pushToCloud(()=>{renderSessContent(sid);renderSessList();});
+}
+
+/* ================================================
+   待進行
+   ================================================ */
+function renderUpcoming(){
+  const el=document.getElementById('upcomingContent');
+  const upcoming=sessions.filter(s=>{
+    if(!s.matches||!s.matches.length)return false;
+    return !s.matches.some(m=>m.scoreA!==''||m.scoreB!=='');
+  });
+  if(!upcoming.length){el.innerHTML='<div class="empty">目前沒有待進行的賽程</div>';return;}
+  let html='';
+  upcoming.forEach(s=>{
+    html+=`<div class="upcoming-card">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+        <span style="font-size:15px;font-weight:500">${s.name||'未命名'}</span>
+        <span style="font-size:12px;color:#888">${fmtDate(s.date)} · ${(s.attendees||[]).length}人 · ${s.matches.length}場</span>
+      </div>`;
+    s.matches.forEach((m,mi)=>{
+      const court=m.court?'場地 '+m.court+' · ':'';
+      html+=`<div class="upcoming-match">
+        <span style="font-size:11px;color:#aaa;min-width:70px;flex-shrink:0">${court}第 ${mi+1} 場</span>
+        <span style="flex:1;font-weight:500">${(m.teamA||[]).join(' & ')}</span>
+        <span style="color:#aaa;font-size:12px;flex-shrink:0;padding:0 8px">vs</span>
+        <span style="flex:1;font-weight:500;text-align:right">${(m.teamB||[]).join(' & ')}</span>
+      </div>
+      ${m.waiting&&m.waiting.length?`<p style="font-size:12px;color:#aaa;margin-bottom:4px;padding:0 2px">等待：${m.waiting.join('・')}</p>`:''}`;
+    });
+    html+=`</div>`;
+  });
+  el.innerHTML=html;
+}
+
+/* ================================================
+   歷史紀錄
+   ================================================ */
+function renderHistory(){
+  const el=document.getElementById('histContent');
+  if(!sessions.length){el.innerHTML='<div class="empty">尚無歷史紀錄</div>';return;}
+  let html='';
+  [...sessions].reverse().forEach(s=>{
+    const sc=calcScore(s);const wins=calcWins(s);
+    const sorted=(s.attendees||[]).slice().sort((a,b)=>(sc[b]||0)-(sc[a]||0));
+    const scored=(s.matches||[]).filter(m=>m.scoreA!==''&&m.scoreB!=='');
+    html+=`<div class="hist-card">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+        <div><span style="font-size:15px;font-weight:500">${s.name||'未命名'}</span>
+          <span style="font-size:12px;color:#888;margin-left:8px">${fmtDate(s.date)}</span></div>
+        <span style="font-size:12px;color:#aaa">${(s.attendees||[]).length}人 · ${(s.matches||[]).length}場</span>
+      </div>`;
+    if(sorted.length&&scored.length){
+      html+=`<table class="h-table" style="margin-bottom:10px"><thead><tr><th>排名</th><th>選手</th><th>勝場</th><th class="r">積分</th></tr></thead><tbody>`;
+      let rank=1;sorted.forEach((p,i)=>{
+        if(i>0&&(sc[sorted[i]]||0)!==(sc[sorted[i-1]]||0))rank=i+1;
+        html+=`<tr><td>${rank}</td><td>${p}</td><td>${wins[p]||0}</td><td class="r"><strong>${sc[p]||0}</strong></td></tr>`;
+      });
+      html+=`</tbody></table>`;
+    }
+    scored.forEach(m=>{
+      const sa=parseInt(m.scoreA),sb=parseInt(m.scoreB);
+      const aWin=sa>sb,bWin=sb>sa;
+      const allIdx=(s.matches||[]).indexOf(m);
+      const court=m.court?'場地 '+m.court+' · ':'';
+      html+=`<div class="mrow">
+        <span style="font-size:11px;color:#aaa;min-width:72px;flex-shrink:0">${court}第 ${allIdx+1} 場</span>
+        <span style="flex:1;font-weight:500;color:${aWin?'#0F6E56':bWin?'#bbb':'#1a1a18'}">${(m.teamA||[]).join(' & ')}</span>
+        <span style="font-size:15px;font-weight:500;flex-shrink:0;padding:0 8px">${sa} : ${sb}</span>
+        <span style="flex:1;font-weight:500;text-align:right;color:${bWin?'#0F6E56':aWin?'#bbb':'#1a1a18'}">${(m.teamB||[]).join(' & ')}</span>
+      </div>`;
+    });
+    html+=`</div>`;
+  });
+  el.innerHTML=html;
+}
+
+/* ================================================
+   設定
+   ================================================ */
+function renderSettings(){
+  renderPlayerList();
+  const wu=document.getElementById('cfgUrl');if(wu)wu.value=WEB_APP_URL;
+  const wi=document.getElementById('winPtsInput');if(wi)wi.value=winPts;
+  const np=document.getElementById('newPlayerName');
+  if(np&&!np.onkeydown)np.addEventListener('keydown',e=>{if(e.key==='Enter')addPlayer();});
+}
+function addPlayer(){
+  const inp=document.getElementById('newPlayerName');
+  const n=inp.value.trim();
+  if(!n){inp.focus();return;}
+  if(players.includes(n)){alert('已有同名選手');inp.focus();return;}
+  players.push(n);
+  inp.value='';
+  inp.focus();
+  localSave();
+  // 只更新選手列表，不重繪整個設定頁（避免輸入框狀態遺失）
+  renderPlayerList();
+  renderRank();
+}
+
+function renderPlayerList(){
+  const pl=document.getElementById('playerListEl');
+  if(!pl)return;
+  if(!players.length){pl.innerHTML='<div class="empty">尚無選手</div>';return;}
+  let html='<div style="display:flex;flex-direction:column">';
+  players.forEach((p,i)=>{
+    html+=`<div class="player-row">
+      <div class="avatar" style="background:${avBg(i)};color:${avFg(i)};width:28px;height:28px;font-size:11px;flex-shrink:0">${initials(p)}</div>
+      <span style="flex:1;font-size:13px">${p}</span>
+      <button type="button" class="btn sm danger" onclick="removePlayer(${i})">移除</button>
+    </div>`;
+  });
+  html+='</div>';
+  pl.innerHTML=html;
+}
+function removePlayer(i){
+  if(!confirm('確定移除「'+players[i]+'」？'))return;
+  players.splice(i,1);localSave();renderPlayerList();renderRank();
+}
+function clearAll(){sessions=[];activeSessionId=null;pushToCloud(()=>{document.getElementById('sessContent').innerHTML='';renderAll();});}
+
+/* ================================================
+   匯出 / 匯入
+   ================================================ */
+function exportJSON(){
+  const blob=new Blob([JSON.stringify({players,sessions,winPts,exportTime:new Date().toISOString()},null,2)],{type:'application/json'});
+  const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='羽球積分板備份.json';a.click();URL.revokeObjectURL(url);
+}
+function importJSON(e){
+  const file=e.target.files[0];if(!file)return;
+  const reader=new FileReader();
+  reader.onload=function(ev){
+    try{
+      const data=JSON.parse(ev.target.result);
+      if(!data.players||!data.sessions){alert('格式不符');return;}
+      if(!confirm('確定匯入？會覆蓋目前的資料。'))return;
+      players=data.players;sessions=data.sessions;winPts=data.winPts||2;
+      pushToCloud(()=>{renderAll();alert('✓ 匯入成功！');});
+    }catch(err){alert('匯入失敗');}
+  };
+  reader.readAsText(file);e.target.value='';
+}
+function exportCSV(){
+  const totals=getTotals();
+  let csv='排名,選手,總積分,出賽場次,累計勝場\n';
+  totals.forEach((p,i)=>{csv+=`${i+1},${p.name},${p.total},${p.sessCount},${p.wins}\n`;});
+  csv+='\n場次明細\n場次,日期,出席人數,場數\n';
+  sessions.forEach(s=>{csv+=`${s.name},${s.date},${(s.attendees||[]).length},${(s.matches||[]).length}\n`;});
+  const blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'});
+  const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='羽球積分板.csv';a.click();URL.revokeObjectURL(url);
+}
+
+/* ================================================
+   初始化
+   ================================================ */
+localLoad();
+const today=new Date();
+const nd=document.getElementById('newDate');
+if(nd)nd.value=today.getFullYear()+'-'+String(today.getMonth()+1).padStart(2,'0')+'-'+String(today.getDate()).padStart(2,'0');
+pullFromCloud();
+setInterval(pullFromCloud,30000);
+</script>
+</body>
+</html>
