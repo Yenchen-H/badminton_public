@@ -579,10 +579,12 @@ function todayStr(){
   return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0');
 }
 function isSessionActive(s){
-  // 今日賽程只顯示：1) 日期是今天 且 2) 尚未有任何已確認比分
+  // 今日賽程：日期是今天，且還有未確認比分的場次（或尚未開始抽籤）
   const today=todayStr();
-  const hasScore=(s.matches||[]).some(m=>m.scoreA!==''&&m.scoreB!=='');
-  return s.date===today && !hasScore;
+  if(s.date!==today)return false;
+  const hasUnfinished=(s.matches||[]).some(m=>m.scoreA===''||m.scoreB==='');
+  const noMatches=!(s.matches&&s.matches.length);
+  return hasUnfinished||noMatches;
 }
 
 function renderSessList(){
@@ -898,7 +900,9 @@ function addMatchCourt(sid,court){
   m.court=court;
   liveScores[m.id]={a:0,b:0};
   s.matches.push(m);
-  pushToCloud(()=>{renderSessContent(sid);renderSessList();});
+  localSave();
+  renderSessContent(sid);
+  renderSessList();
 }
 
 function delMatch(sid,mi){
