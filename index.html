@@ -592,9 +592,10 @@ function renderSessList(){
   const active=[...sessions].reverse().filter(s=>isSessionActive(s));
   if(!active.length){
     el.innerHTML='<div class="empty" style="padding:1rem;font-size:13px;color:#aaa">目前沒有進行中的場次<br>已完成或過去的場次請到「歷史紀錄」查看</div>';
-    if(activeSessionId && !isSessionActive(getSess(activeSessionId))){
-      activeSessionId=null;
-      document.getElementById('sessContent').innerHTML='';
+    if(activeSessionId){
+      const cur=getSess(activeSessionId);
+      // 只有 session 不存在（被刪除）才清空，比賽進行中不清空
+      if(!cur){activeSessionId=null;document.getElementById('sessContent').innerHTML='';}
     }
     return;
   }
@@ -829,13 +830,7 @@ function confirmScore(sid,mid){
   m.scoreA=String(live.a);m.scoreB=String(live.b);
   delete liveScores[mid];
   pushToCloud(()=>{
-    const s=getSess(sid);
-    if(s && !isSessionActive(s)){
-      activeSessionId=null;
-      document.getElementById('sessContent').innerHTML='';
-    } else {
-      renderSessContent(sid);
-    }
+    renderSessContent(sid);
     renderRank();renderSessList();renderHistory();
   });
 }
