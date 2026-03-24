@@ -413,7 +413,18 @@ async function pullFromCloud(){
     const localSessCount=sessions.length;
     if(cloudSessCount>=localSessCount){
       if(data.players&&data.players.length>0)players=data.players;
-      if(data.sessions)sessions=data.sessions;
+      if(data.sessions){
+        // 保留本地 session 的 attendeesConfirmed 狀態，避免雲端覆蓋後跳回步驟一
+        const localMap={};
+        sessions.forEach(s=>{localMap[s.id]=s;});
+        sessions=data.sessions.map(s=>{
+          const local=localMap[s.id];
+          if(local&&local.attendeesConfirmed&&!s.attendeesConfirmed){
+            s.attendeesConfirmed=true;
+          }
+          return s;
+        });
+      }
       if(data.winPts)winPts=data.winPts;
     }
     localSave();
@@ -855,8 +866,7 @@ function confirmAttendees(sid){
   const s=getSess(sid);if(!s)return;
   if((s.attendees||[]).length<4){alert('需要至少 4 人');return;}
   s.attendeesConfirmed=true;
-  localSave();
-  renderSessContent(sid);
+  pushToCloud(()=>{renderSessContent(sid);});
   // 自動滑到賽程區
   setTimeout(()=>{
     const el=document.getElementById('sessContent');
@@ -888,9 +898,7 @@ function addMatchCourt(sid,court){
   m.court=court;
   liveScores[m.id]={a:0,b:0};
   s.matches.push(m);
-  localSave(); // 抽籤只存本地，確認比分時才同步雲端
-  renderSessContent(sid);
-  renderSessList();
+  pushToCloud(()=>{renderSessContent(sid);renderSessList();});
 }
 
 function delMatch(sid,mi){
