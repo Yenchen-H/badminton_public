@@ -594,7 +594,6 @@ function renderSessList(){
     el.innerHTML='<div class="empty" style="padding:1rem;font-size:13px;color:#aaa">目前沒有進行中的場次<br>已完成或過去的場次請到「歷史紀錄」查看</div>';
     if(activeSessionId){
       const cur=getSess(activeSessionId);
-      // 只有 session 不存在（被刪除）才清空，比賽進行中不清空
       if(!cur){activeSessionId=null;document.getElementById('sessContent').innerHTML='';}
     }
     return;
@@ -700,6 +699,19 @@ function renderSessContent(id){
       html+=`<div class="match-list">`;
       s.matches.forEach((m,mi)=>{html+=renderMatchCard(s,m,mi);});
       html+=`</div>`;
+      // 確認全部比分按鈕：所有未完成場次都有填數字才顯示
+      const pendingMatches=s.matches.filter(m=>m.scoreA===''||m.scoreB==='');
+      const allFilled=pendingMatches.length>0&&pendingMatches.every(m=>{
+        const live=liveScores[m.id];
+        return live&&live.a!==undefined&&live.b!==undefined;
+      });
+      html+=`<div style="display:flex;justify-content:center;margin-top:14px">
+        <button type="button" class="btn success" id="cfAllBtn_${id}"
+          onclick="confirmAllScores('${id}')"
+          style="font-size:15px;padding:13px 28px;${allFilled?'':' display:none'}">
+          ✓ 確認全部比分
+        </button>
+      </div>`;
     }else{
       html+=`<p style="text-align:center;padding:1.5rem;color:#aaa;font-size:13px">按「＋ 場地 A」開始抽籤</p>`;
     }
@@ -734,8 +746,6 @@ function renderMatchCard(s,m,mi){
   const sb=isDone?parseInt(m.scoreB):live.b;
   const aWin=sa>sb,bWin=sb>sa;
   const court=m.court||'';
-  const nameA=(m.teamA||[]).join(' & ');
-  const nameB=(m.teamB||[]).join(' & ');
   let body='';
   if(isDone){
     body=`<div class="sb">
@@ -757,10 +767,6 @@ function renderMatchCard(s,m,mi){
           value="${live.a}" min="0" max="99"
           oninput="adjInput('${s.id}','${m.id}','a',this.value)"
           onblur="adjInputBlur('${s.id}','${m.id}','a',this.value)">
-        <div class="sb-btns">
-          <button type="button" class="sb-btn minus" onclick="adj('${s.id}','${m.id}','a',-1,${mi})">−</button>
-          <button type="button" class="sb-btn plus" onclick="adj('${s.id}','${m.id}','a',+1,${mi})">＋</button>
-        </div>
       </div>
       <div class="sb-vs">vs</div>
       <div class="sb-side">
@@ -769,14 +775,9 @@ function renderMatchCard(s,m,mi){
           oninput="adjInput('${s.id}','${m.id}','b',this.value)"
           onblur="adjInputBlur('${s.id}','${m.id}','b',this.value)">
         <div class="sb-names">${(m.teamB||[]).join('<br>&amp; ')}</div>
-        <div class="sb-btns">
-          <button type="button" class="sb-btn minus" onclick="adj('${s.id}','${m.id}','b',-1,${mi})">−</button>
-          <button type="button" class="sb-btn plus" onclick="adj('${s.id}','${m.id}','b',+1,${mi})">＋</button>
-        </div>
       </div>
     </div>
     <div class="sb-confirm">
-      <button type="button" class="btn success" id="cfbtn_${m.id}" onclick="confirmScore('${s.id}','${m.id}')">✓ 確認 ${live.a} : ${live.b}</button>
       <button type="button" class="btn sm danger" onclick="requireAdmin(()=>delMatch('${s.id}',${mi}))">移除</button>
     </div>`;
   }
@@ -790,17 +791,12 @@ function renderMatchCard(s,m,mi){
   </div>`;
 }
 
-function adj(sid,mid,side,delta,mi){
-  if(!liveScores[mid])liveScores[mid]={a:0,b:0};
-  liveScores[mid][side]=Math.max(0,liveScores[mid][side]+delta);
-  updateScoreDisplay(mid);
-}
-
 function adjInput(sid,mid,side,val){
   if(!liveScores[mid])liveScores[mid]={a:0,b:0};
   const n=parseInt(val);
   if(!isNaN(n)&&n>=0)liveScores[mid][side]=n;
-  updateScoreDisplay(mid,side); // only update styling, not value
+  updateScoreDisplay(mid,side);
+  checkConfirmAllBtn(sid);
 }
 
 function adjInputBlur(sid,mid,side,val){
@@ -808,6 +804,7 @@ function adjInputBlur(sid,mid,side,val){
   const n=parseInt(val)||0;
   liveScores[mid][side]=Math.max(0,n);
   updateScoreDisplay(mid);
+  checkConfirmAllBtn(sid);
 }
 
 function updateScoreDisplay(mid, skipSide){
@@ -818,17 +815,29 @@ function updateScoreDisplay(mid, skipSide){
   else if(la){la.className='sb-score-input'+(live.a>live.b?' leading':'');}
   if(lb&&skipSide!=='b'){lb.value=live.b;lb.className='sb-score-input'+(live.b>live.a?' leading':'');}
   else if(lb){lb.className='sb-score-input'+(live.b>live.a?' leading':'');}
-  const cb=document.getElementById('cfbtn_'+mid);
-  if(cb)cb.textContent='✓ 確認 '+live.a+' : '+live.b;
 }
 
-function confirmScore(sid,mid){
+// 每場都有數值（含 0）就顯示「確認全部比分」按鈕
+function checkConfirmAllBtn(sid){
   const s=getSess(sid);if(!s)return;
-  const m=s.matches.find(mm=>mm.id===mid);if(!m)return;
-  const live=liveScores[mid]||{a:0,b:0};
-  if(live.a===0&&live.b===0&&!confirm('比分都是 0，確定？'))return;
-  m.scoreA=String(live.a);m.scoreB=String(live.b);
-  delete liveScores[mid];
+  const pending=s.matches.filter(m=>m.scoreA===''||m.scoreB==='');
+  const allFilled=pending.every(m=>{
+    const live=liveScores[m.id];
+    return live&&live.a!==undefined&&live.b!==undefined&&live.a!==''&&live.b!=='';
+  });
+  const btn=document.getElementById('cfAllBtn_'+sid);
+  if(btn)btn.style.display=allFilled&&pending.length?'':' none';
+}
+
+function confirmAllScores(sid){
+  const s=getSess(sid);if(!s)return;
+  const pending=s.matches.filter(m=>m.scoreA===''||m.scoreB==='');
+  if(!pending.length)return;
+  pending.forEach(m=>{
+    const live=liveScores[m.id]||{a:0,b:0};
+    m.scoreA=String(live.a);m.scoreB=String(live.b);
+    delete liveScores[m.id];
+  });
   pushToCloud(()=>{
     renderSessContent(sid);
     renderRank();renderSessList();renderHistory();
