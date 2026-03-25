@@ -176,6 +176,12 @@ input:focus{outline:3px solid rgba(96,165,250,.18);border-color:rgba(59,130,246,
 .pts-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px}
 .pts-card{border-radius:16px;padding:10px 12px;display:flex;align-items:center;justify-content:space-between;gap:6px;font-size:13px}
 .empty{text-align:center;padding:2.2rem;color:#94a3b8;font-size:14px}
+.swap-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:8px 0}
+.swap-player{padding:10px 12px;border-radius:14px;border:2px solid var(--line);background:rgba(255,255,255,.9);cursor:pointer;font-size:13px;font-weight:700;text-align:center;transition:.15s}
+.swap-player.on{border-color:#3b82f6;background:#eff6ff;color:#1d4ed8}
+.swap-sub{display:grid;grid-template-columns:repeat(auto-fill,minmax(80px,1fr));gap:8px;margin-top:10px}
+.swap-sub-chip{padding:9px 8px;border-radius:14px;border:1px solid var(--line);background:rgba(255,255,255,.84);cursor:pointer;font-size:12px;font-weight:700;text-align:center;transition:.15s}
+.swap-sub-chip:hover{border-color:#3b82f6;background:#eff6ff;color:#1d4ed8}
 .spinner{display:inline-block;width:14px;height:14px;border:2px solid #dbeafe;border-top-color:#2563eb;border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle;margin-right:4px}
 .divider{border:none;border-top:1px solid var(--line);margin:12px 0}
 @keyframes spin{to{transform:rotate(360deg)}}
@@ -204,6 +210,21 @@ input:focus{outline:3px solid rgba(96,165,250,.18);border-color:rgba(59,130,246,
     <div class="row" style="margin-bottom:0;justify-content:flex-end">
       <button type="button" class="btn" onclick="closePwModal()">取消</button>
       <button type="button" class="btn primary" onclick="submitPw()">確認</button>
+    </div>
+  </div>
+</div>
+
+<!-- 換人彈窗 -->
+<div class="modal-bg" id="swapModal" style="display:none">
+  <div class="modal" style="width:min(400px,94vw)">
+    <h2>🔄 換人</h2>
+    <p style="font-size:12px;color:#888;margin-top:-4px">選擇要換掉的選手，再選替補選手</p>
+    <p class="lbl" style="margin-top:10px">本場選手（點選要換掉的人）</p>
+    <div class="swap-grid" id="swapCurrent"></div>
+    <p class="lbl" id="swapSubLbl" style="display:none">選擇替補選手</p>
+    <div class="swap-sub" id="swapSubs"></div>
+    <div class="row" style="margin-bottom:0;justify-content:flex-end;margin-top:8px">
+      <button type="button" class="btn" onclick="closeSwapModal()">取消</button>
     </div>
   </div>
 </div>
@@ -802,7 +823,7 @@ function renderMatchCard(s,m,mi){
   return `<div class="match-card${court?' c'+court.toLowerCase():''}${isDone?' done':''}" id="mc_${s.id}_${mi}">
     <div class="mc-head">
       <span class="mc-lbl${court?' '+court.toLowerCase():''}">${court?'場地 '+court+' · ':''}第 ${mi+1} 場${isDone?' ✓':''}</span>
-      ${isDone?`<button type="button" class="btn sm danger" onclick="undoScore('${s.id}','${m.id}',${mi})">重打</button>`:''}
+      ${isDone?`<button type="button" class="btn sm danger" onclick="undoScore('${s.id}','${m.id}',${mi})">重打</button>`:`<button type="button" class="btn sm" onclick="openSwapModal('${s.id}','${m.id}')">換人</button>`}
     </div>
     ${body}
     ${m.waiting&&m.waiting.length?`<div class="waiting-bar">等待：${m.waiting.map(p=>'<span class="w-chip">'+p+'</span>').join('')}</div>`:''}
@@ -848,10 +869,67 @@ function confirmScore(sid,mid){
   if(live.a===0&&live.b===0&&!confirm('比分都是 0，確定？'))return;
   m.scoreA=String(live.a);m.scoreB=String(live.b);
   delete liveScores[mid];
-  pushToCloud(()=>{
-    renderSessContent(sid);
-    renderRank();renderSessList();renderHistory();renderUpcoming();
+  // 先本地存並立即渲染，背景再推雲端
+  localSave();
+  renderSessContent(sid);
+  renderRank();renderSessList();renderHistory();renderUpcoming();
+  pushToCloud(null);
+}
+
+/* ── 換人功能 ── */
+let swapState={sid:null,mid:null,outPlayer:null};
+function openSwapModal(sid,mid){
+  const s=getSess(sid);if(!s)return;
+  const m=s.matches.find(mm=>mm.id===mid);if(!m)return;
+  swapState={sid,mid,outPlayer:null};
+  const cur=document.getElementById('swapCurrent');
+  const all=[...m.teamA,...m.teamB];
+  cur.innerHTML=all.map(p=>`<div class="swap-player" onclick="selectSwapOut('${p.replace(/'/g,"\'")}','${sid}','${mid}')">${p}</div>`).join('');
+  document.getElementById('swapSubLbl').style.display='none';
+  document.getElementById('swapSubs').innerHTML='';
+  document.getElementById('swapModal').style.display='flex';
+}
+function selectSwapOut(name,sid,mid){
+  swapState.outPlayer=name;
+  // highlight selected
+  document.querySelectorAll('.swap-player').forEach(el=>{
+    el.classList.toggle('on', el.textContent===name);
   });
+  // 顯示可替補的選手（出席名單中，不在本場上場的）
+  const s=getSess(sid);if(!s)return;
+  const m=s.matches.find(mm=>mm.id===mid);if(!m)return;
+  const playing=[...m.teamA,...m.teamB];
+  const subs=(s.attendees||[]).filter(p=>!playing.includes(p));
+  const subsEl=document.getElementById('swapSubs');
+  const lbl=document.getElementById('swapSubLbl');
+  if(!subs.length){
+    lbl.style.display='';lbl.textContent='沒有可替補的選手';
+    subsEl.innerHTML='';return;
+  }
+  lbl.style.display='';lbl.textContent='選擇替補選手';
+  subsEl.innerHTML=subs.map(p=>`<div class="swap-sub-chip" onclick="doSwap('${p.replace(/'/g,"\'")}')">
+    ${p}</div>`).join('');
+}
+function doSwap(inPlayer){
+  const {sid,mid,outPlayer}=swapState;
+  if(!outPlayer)return;
+  const s=getSess(sid);if(!s)return;
+  const m=s.matches.find(mm=>mm.id===mid);if(!m)return;
+  if(m.teamA.includes(outPlayer)) m.teamA[m.teamA.indexOf(outPlayer)]=inPlayer;
+  else if(m.teamB.includes(outPlayer)) m.teamB[m.teamB.indexOf(outPlayer)]=inPlayer;
+  // 更新 waiting 清單
+  if(m.waiting){
+    m.waiting=m.waiting.filter(p=>p!==inPlayer);
+    if(!m.waiting.includes(outPlayer))m.waiting.push(outPlayer);
+  }
+  closeSwapModal();
+  localSave();
+  renderSessContent(sid);
+  pushToCloud(null);
+}
+function closeSwapModal(){
+  document.getElementById('swapModal').style.display='none';
+  swapState={sid:null,mid:null,outPlayer:null};
 }
 
 function undoScore(sid,mid,mi){
@@ -914,7 +992,9 @@ function addMatchCourt(sid,court){
   m.court=court;
   liveScores[m.id]={a:0,b:0};
   s.matches.push(m);
-  pushToCloud(()=>{renderSessContent(sid);renderSessList();renderUpcoming();});
+  localSave();
+  renderSessContent(sid);renderSessList();renderUpcoming();
+  pushToCloud(null);
 }
 
 function delMatch(sid,mi){
