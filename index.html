@@ -176,6 +176,21 @@ input:focus{outline:3px solid rgba(96,165,250,.18);border-color:rgba(59,130,246,
 .pts-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px}
 .pts-card{border-radius:16px;padding:10px 12px;display:flex;align-items:center;justify-content:space-between;gap:6px;font-size:13px}
 .empty{text-align:center;padding:2.2rem;color:#94a3b8;font-size:14px}
+/* ── 歷史紀錄排名卡片 ── */
+.hist-rank-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px;margin-bottom:16px}
+.hist-rank-card{border-radius:18px;padding:14px 12px;display:flex;flex-direction:column;align-items:center;gap:5px;border:1px solid var(--line);background:rgba(255,255,255,.82)}
+.hist-rank-card.rank1{background:linear-gradient(145deg,#fffbeb,#fef3c7);border-color:rgba(251,191,36,.35)}
+.hist-rank-card.rank2{background:linear-gradient(145deg,#f8fafc,#f1f5f9);border-color:rgba(148,163,184,.3)}
+.hist-rank-card.rank3{background:linear-gradient(145deg,#fff7f0,#ffedd5);border-color:rgba(249,115,22,.25)}
+.hist-rank-medal{font-size:22px;line-height:1}
+.hist-rank-name{font-size:13px;font-weight:800;color:var(--text);text-align:center;word-break:break-all}
+.hist-rank-pts{font-size:26px;font-weight:800;letter-spacing:-.04em;line-height:1;color:#3b82f6}
+.hist-rank-card.rank1 .hist-rank-pts{background:linear-gradient(135deg,#d97706,#f59e0b);-webkit-background-clip:text;background-clip:text;color:transparent}
+.hist-rank-card.rank2 .hist-rank-pts{color:#475569}
+.hist-rank-card.rank3 .hist-rank-pts{background:linear-gradient(135deg,#ea580c,#f97316);-webkit-background-clip:text;background-clip:text;color:transparent}
+.hist-rank-wins{font-size:11px;color:var(--muted);font-weight:600}
+.hist-match-toggle{font-size:12px;color:var(--muted);cursor:pointer;padding:6px 0;display:flex;align-items:center;gap:4px;user-select:none;font-weight:600}
+.hist-match-toggle:hover{color:var(--primary)}
 .swap-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:8px 0}
 .swap-player{padding:10px 12px;border-radius:14px;border:2px solid var(--line);background:rgba(255,255,255,.9);cursor:pointer;font-size:13px;font-weight:700;text-align:center;transition:.15s}
 .swap-player.on{border-color:#3b82f6;background:#eff6ff;color:#1d4ed8}
@@ -233,11 +248,7 @@ input:focus{outline:3px solid rgba(96,165,250,.18);border-color:rgba(59,130,246,
   <span class="app-title">🏸 羽球積分板</span>
   <span class="sync-badge" id="syncBadge" onclick="pullFromCloud()"><span class="spinner"></span>讀取中</span>
 </div>
-<div class="card" style="padding:20px 22px;margin-bottom:18px;background:linear-gradient(180deg,rgba(255,255,255,.88),rgba(255,255,255,.72))">
-  <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap">
-    <div>
-  </div>
-</div>
+
 <div class="tab-nav">
   <button type="button" class="on" onclick="showTab('rank')">排行榜</button>
   <button type="button" onclick="showTab('play')">今日賽程</button>
@@ -292,7 +303,7 @@ input:focus{outline:3px solid rgba(96,165,250,.18);border-color:rgba(59,130,246,
     <p style="font-size:12px;color:#aaa;margin-bottom:10px">贏一場 → 上場兩人各得分數</p>
     <div class="row" style="margin-bottom:0">
       <span style="font-size:13px">每勝得</span>
-      <input type="number" id="winPtsInput" min="1" max="10" value="2" style="width:60px" onchange="winPts=parseInt(this.value)||2;localSave()">
+      <input type="number" id="winPtsInput" min="1" max="10" value="2" style="width:60px" onchange="winPts=parseInt(this.value)||2;pushToCloud(null)">
       <span style="font-size:13px">分</span>
     </div>
   </div>
@@ -430,25 +441,18 @@ async function pullFromCloud(){
     const res=await fetch(WEB_APP_URL+'?action=getData&t='+Date.now());
     const data=await res.json();
     if(!data.ok)throw new Error(data.error||'讀取失敗');
-    // 只在雲端資料較新時才覆蓋（以場次數量判斷）
-    const cloudSessCount=(data.sessions||[]).length;
-    const localSessCount=sessions.length;
-    if(cloudSessCount>=localSessCount){
-      if(data.players&&data.players.length>0)players=data.players;
-      if(data.sessions){
-        // 保留本地 session 的 attendeesConfirmed 狀態，避免雲端覆蓋後跳回步驟一
-        const localMap={};
-        sessions.forEach(s=>{localMap[s.id]=s;});
-        sessions=data.sessions.map(s=>{
-          const local=localMap[s.id];
-          if(local&&local.attendeesConfirmed&&!s.attendeesConfirmed){
-            s.attendeesConfirmed=true;
-          }
-          return s;
-        });
-      }
-      if(data.winPts)winPts=data.winPts;
+    // 直接使用雲端資料（支援跨裝置同步與刪除）
+    if(data.players&&data.players.length>0)players=data.players;
+    if(data.sessions){
+      const localMap={};
+      sessions.forEach(s=>{localMap[s.id]=s;});
+      sessions=data.sessions.map(s=>{
+        const local=localMap[s.id];
+        if(local&&local.attendeesConfirmed&&!s.attendeesConfirmed)s.attendeesConfirmed=true;
+        return s;
+      });
     }
+    if(data.winPts)winPts=data.winPts;
     localSave();
     setSyncBadge('ok','同步 '+fmtNow());
     renderAll();
@@ -663,6 +667,7 @@ function createSession(){
   localSave();
   renderSessList();
   renderSessContent(s.id);
+  pushToCloud(null);
 }
 
 function selectSess(id){activeSessionId=id;renderSessList();renderSessContent(id);}
@@ -671,7 +676,7 @@ function deleteSess(id){
   if(!confirm('確定刪除此場次？'))return;
   sessions=sessions.filter(s=>s.id!==id);
   if(activeSessionId===id){activeSessionId=null;document.getElementById('sessContent').innerHTML='';}
-  pushToCloud(()=>{renderSessList();renderRank();});
+  pushToCloud(()=>{renderSessList();renderRank();renderUpcoming();renderHistory();});
 }
 
 function renderSessContent(id){
@@ -975,7 +980,7 @@ function editAttendees(sid){
     s.matches=[];
   }
   s.attendeesConfirmed=false;
-  localSave();
+  pushToCloud(null);
   renderSessContent(sid);
 }
 
@@ -1005,6 +1010,7 @@ function delMatch(sid,mi){
   localSave();
   renderSessContent(sid);
   renderSessList();
+  pushToCloud(null);
 }
 
 /* ================================================
@@ -1040,43 +1046,73 @@ function renderUpcoming(){
 function renderHistory(){
   const el=document.getElementById('histContent');
   if(!sessions.length){el.innerHTML='<div class="empty">尚無歷史紀錄</div>';return;}
+  const medals=['🥇','🥈','🥉'];
+  const rankClass=['rank1','rank2','rank3'];
   let html='';
   [...sessions].reverse().forEach(s=>{
     const sc=calcScore(s);const wins=calcWins(s);
     const sorted=(s.attendees||[]).slice().sort((a,b)=>(sc[b]||0)-(sc[a]||0));
     const scored=(s.matches||[]).filter(m=>m.scoreA!==''&&m.scoreB!=='');
+    const sid=s.id;
     html+=`<div class="hist-card">
-      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px">
-        <div><span style="font-size:15px;font-weight:500">${s.name||'未命名'}</span>
-          <span style="font-size:12px;color:#888;margin-left:8px">${fmtDate(s.date)}</span></div>
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:14px">
+        <div>
+          <span style="font-size:16px;font-weight:800">${s.name||'未命名'}</span>
+          <span style="font-size:12px;color:#888;margin-left:8px">${fmtDate(s.date)}</span>
+        </div>
         <div style="display:flex;align-items:center;gap:8px">
-          <span style="font-size:12px;color:#aaa">${(s.attendees||[]).length}人 · ${(s.matches||[]).length}場</span>
-          <button type="button" class="btn sm danger" onclick="requireAdmin(()=>deleteSess('${s.id}'))">刪除</button>
+          <span style="font-size:12px;color:#aaa">${(s.attendees||[]).length}人 · ${scored.length}場</span>
+          <button type="button" class="btn sm danger" onclick="requireAdmin(()=>deleteSess('${sid}'))">刪除</button>
         </div>
       </div>`;
     if(sorted.length&&scored.length){
-      html+=`<table class="h-table" style="margin-bottom:10px"><thead><tr><th>排名</th><th>選手</th><th>勝場</th><th class="r">積分</th></tr></thead><tbody>`;
-      let rank=1;sorted.forEach((p,i)=>{
+      let rank=1;
+      html+=`<div class="hist-rank-grid">`;
+      sorted.forEach((p,i)=>{
         if(i>0&&(sc[sorted[i]]||0)!==(sc[sorted[i-1]]||0))rank=i+1;
-        html+=`<tr><td>${rank}</td><td>${p}</td><td>${wins[p]||0}</td><td class="r"><strong>${sc[p]||0}</strong></td></tr>`;
+        const rc=rankClass[rank-1]||'';
+        const medal=medals[rank-1]||('#'+rank);
+        html+=`<div class="hist-rank-card ${rc}">
+          <div class="hist-rank-medal">${medal}</div>
+          <div class="hist-rank-name">${p}</div>
+          <span class="hist-rank-pts">${sc[p]||0}</span>
+          <div class="hist-rank-wins">${wins[p]||0} 勝</div>
+        </div>`;
       });
-      html+=`</tbody></table>`;
+      html+=`</div>`;
     }
-    scored.forEach(m=>{
-      const sa=parseInt(m.scoreA),sb=parseInt(m.scoreB);
-      const aWin=sa>sb,bWin=sb>sa;
-      const allIdx=(s.matches||[]).indexOf(m);
-      const court=m.court?'場地 '+m.court+' · ':'';
-      html+=`<div class="mrow">
-        <span style="font-size:11px;color:#aaa;min-width:72px;flex-shrink:0">${court}第 ${allIdx+1} 場</span>
-        <span style="flex:1;font-weight:500;color:${aWin?'#0F6E56':bWin?'#bbb':'#1a1a18'}">${(m.teamA||[]).join(' & ')}</span>
-        <span style="font-size:15px;font-weight:500;flex-shrink:0;padding:0 8px">${sa} : ${sb}</span>
-        <span style="flex:1;font-weight:500;text-align:right;color:${bWin?'#0F6E56':aWin?'#bbb':'#1a1a18'}">${(m.teamB||[]).join(' & ')}</span>
-      </div>`;
-    });
+    if(scored.length){
+      html+=`<div>
+        <div class="hist-match-toggle" onclick="toggleHistMatches('${sid}')">
+          <span id="htoggle_${sid}">▶</span>
+          <span>比賽紀錄（${scored.length} 場）</span>
+        </div>
+        <div id="hmatches_${sid}" style="display:none">`;
+      scored.forEach(m=>{
+        const sa=parseInt(m.scoreA),sb=parseInt(m.scoreB);
+        const aWin=sa>sb,bWin=sb>sa;
+        const allIdx=(s.matches||[]).indexOf(m);
+        const court=m.court?'場地 '+m.court+' · ':'';
+        html+=`<div class="mrow">
+          <span style="font-size:11px;color:#aaa;min-width:72px;flex-shrink:0">${court}第 ${allIdx+1} 場</span>
+          <span style="flex:1;font-weight:600;font-size:13px;color:${aWin?'#047857':bWin?'#94a3b8':'#1a1a18'}">${(m.teamA||[]).join(' & ')}</span>
+          <span style="font-size:16px;font-weight:800;flex-shrink:0;padding:0 10px;color:#0f172a">${sa} : ${sb}</span>
+          <span style="flex:1;font-weight:600;font-size:13px;text-align:right;color:${bWin?'#047857':aWin?'#94a3b8':'#1a1a18'}">${(m.teamB||[]).join(' & ')}</span>
+        </div>`;
+      });
+      html+=`</div></div>`;
+    }
     html+=`</div>`;
   });
   el.innerHTML=html;
+}
+function toggleHistMatches(sid){
+  const el=document.getElementById('hmatches_'+sid);
+  const arrow=document.getElementById('htoggle_'+sid);
+  if(!el)return;
+  const open=el.style.display==='none';
+  el.style.display=open?'':'none';
+  if(arrow)arrow.textContent=open?'▼':'▶';
 }
 
 /* ================================================
@@ -1097,8 +1133,7 @@ function addPlayer(){
   players.push(n);
   inp.value='';
   inp.focus();
-  localSave();
-  // 只更新選手列表，不重繪整個設定頁（避免輸入框狀態遺失）
+  pushToCloud(null);
   renderPlayerList();
   renderRank();
 }
@@ -1109,18 +1144,49 @@ function renderPlayerList(){
   if(!players.length){pl.innerHTML='<div class="empty">尚無選手</div>';return;}
   let html='<div style="display:flex;flex-direction:column">';
   players.forEach((p,i)=>{
-    html+=`<div class="player-row">
+    html+=`<div class="player-row" id="prow_${i}">
       <div class="avatar" style="background:${avBg(i)};color:${avFg(i)};width:28px;height:28px;font-size:11px;flex-shrink:0">${initials(p)}</div>
       <span style="flex:1;font-size:13px">${p}</span>
+      <button type="button" class="btn sm" onclick="startEditPlayer(${i})" style="margin-right:4px">改名</button>
       <button type="button" class="btn sm danger" onclick="removePlayer(${i})">移除</button>
     </div>`;
   });
   html+='</div>';
   pl.innerHTML=html;
 }
+function startEditPlayer(i){
+  const row=document.getElementById('prow_'+i);if(!row)return;
+  const oldName=players[i];
+  row.innerHTML=`
+    <div class="avatar" style="background:${avBg(i)};color:${avFg(i)};width:28px;height:28px;font-size:11px;flex-shrink:0">${initials(oldName)}</div>
+    <input type="text" id="pedit_${i}" value="${oldName.replace(/"/g,'&quot;')}" style="flex:1;font-size:13px;min-width:0"
+      onkeydown="if(event.key==='Enter')confirmEditPlayer(${i});if(event.key==='Escape')renderPlayerList();">
+    <button type="button" class="btn sm primary" onclick="confirmEditPlayer(${i})" style="margin-right:4px">確認</button>
+    <button type="button" class="btn sm" onclick="renderPlayerList()">取消</button>
+  `;
+  const inp=document.getElementById('pedit_'+i);if(inp){inp.focus();inp.select();}
+}
+function confirmEditPlayer(i){
+  const inp=document.getElementById('pedit_'+i);if(!inp)return;
+  const newName=inp.value.trim();
+  if(!newName){inp.focus();return;}
+  if(newName===players[i]){renderPlayerList();return;}
+  if(players.some((p,j)=>j!==i&&p===newName)){alert('已有同名選手');inp.focus();return;}
+  const oldName=players[i];
+  sessions.forEach(s=>{
+    if(s.attendees)s.attendees=s.attendees.map(p=>p===oldName?newName:p);
+    if(s.matches)s.matches.forEach(m=>{
+      if(m.teamA)m.teamA=m.teamA.map(p=>p===oldName?newName:p);
+      if(m.teamB)m.teamB=m.teamB.map(p=>p===oldName?newName:p);
+      if(m.waiting)m.waiting=m.waiting.map(p=>p===oldName?newName:p);
+    });
+  });
+  players[i]=newName;
+  pushToCloud(()=>{renderPlayerList();renderRank();renderHistory();});
+}
 function removePlayer(i){
   if(!confirm('確定移除「'+players[i]+'」？'))return;
-  players.splice(i,1);localSave();renderPlayerList();renderRank();
+  players.splice(i,1);pushToCloud(null);renderPlayerList();renderRank();
 }
 function clearAll(){sessions=[];activeSessionId=null;pushToCloud(()=>{document.getElementById('sessContent').innerHTML='';renderAll();});}
 
