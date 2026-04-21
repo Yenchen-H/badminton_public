@@ -547,7 +547,16 @@ function drawMatch(attendees,existingMatches,excludePlayers){
   combos.sort((x,y)=>(gps(x[0][0],x[0][1])+gps(x[1][0],x[1][1]))-(gps(y[0][0],y[0][1])+gps(y[1][0],y[1][1])));
   const teamA=combos[0][0],teamB=combos[0][1];
   const waiting=attendees.filter(p=>![...teamA,...teamB,...excludePlayers].includes(p));
-  return{id:genId(),teamA,teamB,waiting,scoreA:'',scoreB:''};
+  // 從 waiting 中挑裁判次數最少的人
+  let referee=null;
+  if(waiting.length>0){
+    const refCount={};
+    attendees.forEach(p=>refCount[p]=0);
+    (existingMatches||[]).forEach(m=>{if(m.referee)refCount[m.referee]=(refCount[m.referee]||0)+1;});
+    const refSorted=[...waiting].sort((a,b)=>(refCount[a]||0)-(refCount[b]||0));
+    referee=refSorted[0];
+  }
+  return{id:genId(),teamA,teamB,waiting,referee,scoreA:'',scoreB:''};
 }
 
 /* ================================================
@@ -831,7 +840,13 @@ function renderMatchCard(s,m,mi){
       ${isDone?`<button type="button" class="btn sm danger" onclick="undoScore('${s.id}','${m.id}',${mi})">重打</button>`:`<button type="button" class="btn sm" onclick="openSwapModal('${s.id}','${m.id}')">換人</button>`}
     </div>
     ${body}
-    ${m.waiting&&m.waiting.length?`<div class="waiting-bar">等待：${m.waiting.map(p=>'<span class="w-chip">'+p+'</span>').join('')}</div>`:''}
+    ${(()=>{
+      const wList=(m.waiting||[]).filter(p=>p!==m.referee);
+      const refHtml=m.referee?`<span style="margin-left:${wList.length?'8px':'0'};color:#d97706;font-weight:700">⚖️ 裁判：<span class="w-chip" style="border-color:rgba(217,119,6,.3);background:#fffbeb;color:#b45309">${m.referee}</span></span>`:'';
+      const waitHtml=wList.length?`等待：${wList.map(p=>'<span class="w-chip">'+p+'</span>').join('')}`:'';
+      if(!waitHtml&&!refHtml)return '';
+      return `<div class="waiting-bar">${waitHtml}${refHtml}</div>`;
+    })()}
   </div>`;
 }
 
@@ -925,8 +940,10 @@ function doSwap(inPlayer){
   // 更新 waiting 清單
   if(m.waiting){
     m.waiting=m.waiting.filter(p=>p!==inPlayer);
-    if(!m.waiting.includes(outPlayer))m.waiting.push(outPlayer);
+    if(!m.waiting.includes(outPlayer)&&outPlayer!==m.referee)m.waiting.push(outPlayer);
   }
+  // 若換入的人原本是裁判，改由換出的人接任裁判
+  if(m.referee===inPlayer)m.referee=outPlayer;
   closeSwapModal();
   localSave();
   renderSessContent(sid);
@@ -995,6 +1012,21 @@ function addMatchCourt(sid,court){
   const m=drawMatch(s.attendees,s.matches,exclude);
   if(!m){alert('無法抽籤');return;}
   m.court=court;
+  // B場裁判要從兩場都沒上場的人中選（排除A場上場者和A場裁判）
+  if(court==='B'&&s.matches.length>0){
+    const last=s.matches[s.matches.length-1];
+    if(last.court==='A'){
+      const aPlaying=[...last.teamA,...last.teamB];
+      const candidatesB=m.waiting.filter(p=>!aPlaying.includes(p)&&p!==last.referee);
+      if(candidatesB.length>0){
+        const refCount={};
+        s.attendees.forEach(p=>refCount[p]=0);
+        s.matches.forEach(mm=>{if(mm.referee)refCount[mm.referee]=(refCount[mm.referee]||0)+1;});
+        candidatesB.sort((a,b)=>(refCount[a]||0)-(refCount[b]||0));
+        m.referee=candidatesB[0];
+      }
+    }
+  }
   liveScores[m.id]={a:0,b:0};
   s.matches.push(m);
   localSave();
@@ -1179,6 +1211,7 @@ function confirmEditPlayer(i){
       if(m.teamA)m.teamA=m.teamA.map(p=>p===oldName?newName:p);
       if(m.teamB)m.teamB=m.teamB.map(p=>p===oldName?newName:p);
       if(m.waiting)m.waiting=m.waiting.map(p=>p===oldName?newName:p);
+      if(m.referee===oldName)m.referee=newName;
     });
   });
   players[i]=newName;
