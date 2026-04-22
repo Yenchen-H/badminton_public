@@ -192,6 +192,17 @@ input:focus{outline:3px solid rgba(96,165,250,.18);border-color:rgba(59,130,246,
 .hist-match-toggle{font-size:12px;color:var(--muted);cursor:pointer;padding:6px 0;display:flex;align-items:center;gap:4px;user-select:none;font-weight:600}
 .hist-match-toggle:hover{color:var(--primary)}
 .swap-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:8px 0}
+/* ── 搭檔循環賽 ── */
+.pair-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-bottom:14px}
+.pair-card{border-radius:16px;padding:12px 14px;border:2px solid var(--line);background:rgba(255,255,255,.84)}
+.pair-card-title{font-size:11px;font-weight:800;color:var(--muted);margin-bottom:6px;letter-spacing:.04em}
+.pair-select{padding:6px 8px;border-radius:10px;border:1px solid var(--line);background:rgba(255,255,255,.9);font-size:13px;font-family:inherit;color:var(--text);width:100%;margin-top:4px}
+.pair-schedule-badge{display:inline-flex;align-items:center;gap:5px;font-size:11px;padding:3px 10px;border-radius:999px;font-weight:700}
+.pair-schedule-badge.done{background:#d1fae5;color:#047857}
+.pair-schedule-badge.pending{background:#eff6ff;color:#2563eb}
+.pair-rank-row{display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:16px;background:rgba(255,255,255,.84);border:1px solid var(--line);margin-bottom:6px}
+.pair-rank-names{flex:1;font-size:13px;font-weight:700;line-height:1.5}
+.pair-rank-pts{font-size:16px;font-weight:800;min-width:36px;text-align:right}
 .swap-player{padding:10px 12px;border-radius:14px;border:2px solid var(--line);background:rgba(255,255,255,.9);cursor:pointer;font-size:13px;font-weight:700;text-align:center;transition:.15s}
 .swap-player.on{border-color:#3b82f6;background:#eff6ff;color:#1d4ed8}
 .swap-sub{display:grid;grid-template-columns:repeat(auto-fill,minmax(80px,1fr));gap:8px;margin-top:10px}
@@ -275,6 +286,15 @@ input:focus{outline:3px solid rgba(96,165,250,.18);border-color:rgba(59,130,246,
       <input type="date" id="newDate" style="width:140px" onchange="onSessionDateChange()">
       <input type="text" id="newSessName" placeholder="場次名稱（可選）" style="flex:1;min-width:110px">
       <button type="button" class="btn primary" onclick="createSession()">＋ 新增</button>
+    </div>
+    <div class="row" style="margin-bottom:0;gap:8px">
+      <span style="font-size:12px;color:var(--muted);font-weight:700">模式：</span>
+      <label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer">
+        <input type="radio" name="sessMode" value="normal" checked style="accent-color:var(--primary)"> 一般積分
+      </label>
+      <label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer">
+        <input type="radio" name="sessMode" value="pair" style="accent-color:#f59e0b"> 🤝 搭檔循環賽
+      </label>
     </div>
     <div class="sess-list" id="sessList"></div>
   </div>
@@ -448,7 +468,11 @@ async function pullFromCloud(){
       sessions.forEach(s=>{localMap[s.id]=s;});
       sessions=data.sessions.map(s=>{
         const local=localMap[s.id];
+        // 保留本地尚未推上雲端的狀態
         if(local&&local.attendeesConfirmed&&!s.attendeesConfirmed)s.attendeesConfirmed=true;
+        if(local&&local.pairsConfirmed&&!s.pairsConfirmed)s.pairsConfirmed=true;
+        if(local&&local.pairs&&local.pairs.length&&!(s.pairs&&s.pairs.length))s.pairs=local.pairs;
+        if(local&&local.schedule&&local.schedule.length&&!(s.schedule&&s.schedule.length))s.schedule=local.schedule;
         return s;
       });
     }
@@ -668,7 +692,9 @@ function createSession(){
   const date=document.getElementById('newDate').value;
   const name=document.getElementById('newSessName').value.trim();
   if(!date){alert('請選擇日期');return;}
-  const s={id:genId(),date,name:name||fmtDate(date),attendees:[],matches:[]};
+  const modeEl=document.querySelector('input[name="sessMode"]:checked');
+  const mode=(modeEl&&modeEl.value)||'normal';
+  const s={id:genId(),date,name:name||fmtDate(date),attendees:[],matches:[],mode};
   sessions.push(s);
   document.getElementById('newSessName').value='';
   activeSessionId=s.id;
@@ -691,6 +717,7 @@ function deleteSess(id){
 function renderSessContent(id){
   const s=getSess(id);
   if(!s){document.getElementById('sessContent').innerHTML='';return;}
+  if(s.mode==='pair'){renderPairSessContent(id);return;}
   const el=document.getElementById('sessContent');
   let html='';
 
@@ -779,6 +806,171 @@ function renderSessContent(id){
     html+=`<div class="card"><div class="empty">需要至少 4 人才能開始抽籤</div></div>`;
   }
   el.innerHTML=html;
+}
+
+/* ================================================
+   搭檔循環賽模式
+   ================================================ */
+function allCombos2(arr){
+  const res=[];
+  for(let i=0;i<arr.length;i++)for(let j=i+1;j<arr.length;j++)res.push([arr[i],arr[j]]);
+  return res;
+}
+
+function renderPairSessContent(id){
+  const s=getSess(id);if(!s)return;
+  const el=document.getElementById('sessContent');
+  let html='';
+
+  // 頂部標題列
+  html+=`<div class="card" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:0">
+    <div>
+      <p style="font-size:15px;font-weight:500">${s.name}
+        <span style="font-size:12px;background:#fef3c7;color:#b45309;padding:2px 8px;border-radius:999px;font-weight:700;margin-left:6px">🤝 搭檔循環賽</span>
+        <span style="font-size:12px;color:#888;font-weight:400;margin-left:6px">${fmtDate(s.date)}</span>
+      </p>
+      ${s.pairsConfirmed?`<p style="font-size:13px;color:#888;margin-top:3px">出席 ${(s.attendees||[]).length} 人・${(s.pairs||[]).length} 組搭檔</p>`:''}
+    </div>
+    <button type="button" class="btn sm" onclick="editAttendees('${id}')">重新編輯</button>
+  </div>`;
+
+  // 步驟一：勾選出席
+  if(!s.attendeesConfirmed){
+    html+=`<div class="card">
+      <p class="lbl" style="margin-bottom:10px">步驟一：勾選今天出席的選手</p>
+      <div class="p-grid">`;
+    players.forEach(p=>{
+      const on=(s.attendees||[]).includes(p);
+      html+=`<div class="p-chip${on?' on':''}" onclick="toggleAttend('${id}','${p.replace(/'/g,"\'")}',this)" data-name="${p}"><div class="dot"></div>${p}</div>`;
+    });
+    const cnt=(s.attendees||[]).length;
+    const ok=cnt>=4&&cnt%2===0;
+    html+=`</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:12px;flex-wrap:wrap;gap:8px">
+        <span style="font-size:13px;color:#888" id="ac_${id}">${cnt} 人出席${cnt>=4&&cnt%2!==0?' <span style="color:#ef4444">（需偶數人數）</span>':''}</span>
+        <button type="button" class="btn primary" onclick="confirmAttendees('${id}')" ${ok?'':'disabled style="opacity:0.45;cursor:not-allowed"'}>確認出席 →</button>
+      </div>
+    </div>`;
+    el.innerHTML=html;return;
+  }
+
+  // 步驟二：分配搭檔
+  if(!s.pairsConfirmed){
+    if(!s.pairs||!s.pairs.length){
+      const shuffled=shuffle([...s.attendees]);
+      s.pairs=[];
+      for(let i=0;i<shuffled.length;i+=2)s.pairs.push([shuffled[i],shuffled[i+1]]);
+      localSave();
+    }
+    html+=`<div class="card">
+      <p class="lbl" style="margin-bottom:4px">步驟二：搭檔配對</p>
+      <p style="font-size:12px;color:#aaa;margin-bottom:12px">下拉選單可調換搭檔，系統自動互換</p>
+      <div class="pair-grid">`;
+    (s.pairs||[]).forEach((pair,pi)=>{
+      html+=`<div class="pair-card">
+        <div class="pair-card-title">第 ${pi+1} 組</div>
+        <select class="pair-select" onchange="swapPairMember('${id}',${pi},0,this.value)">
+          ${s.attendees.map(p=>`<option value="${p}"${p===pair[0]?' selected':''}>${p}</option>`).join('')}
+        </select>
+        <select class="pair-select" style="margin-top:6px" onchange="swapPairMember('${id}',${pi},1,this.value)">
+          ${s.attendees.map(p=>`<option value="${p}"${p===pair[1]?' selected':''}>${p}</option>`).join('')}
+        </select>
+      </div>`;
+    });
+    html+=`</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button type="button" class="btn sm" onclick="reshufflePairs('${id}')">🔀 重新隨機</button>
+        <button type="button" class="btn success" onclick="confirmPairs('${id}')">確認搭檔 →</button>
+      </div>
+    </div>`;
+    el.innerHTML=html;return;
+  }
+
+  // 步驟三：產生循環賽賽程
+  if(!s.schedule||!s.schedule.length){
+    const combos=allCombos2(s.pairs.map((_,i)=>i));
+    s.schedule=combos.map(([ia,ib])=>({
+      id:genId(),teamA:[...s.pairs[ia]],teamB:[...s.pairs[ib]],
+      pairIdxA:ia,pairIdxB:ib,scoreA:'',scoreB:''
+    }));
+    s.matches=s.schedule;
+    localSave();pushToCloud(null);
+  }
+
+  // 搭檔排名
+  const sc=calcScore(s);const wins=calcWins(s);
+  const pairRanks=(s.pairs||[]).map((pair,pi)=>{
+    const pts=(sc[pair[0]]||0)+(sc[pair[1]]||0);
+    const w=(wins[pair[0]]||0)+(wins[pair[1]]||0);
+    return{pi,pair,pts,wins:w};
+  }).sort((a,b)=>b.pts-a.pts||b.wins-a.wins);
+  const scored=(s.schedule||[]).filter(m=>m.scoreA!==''&&m.scoreB!=='');
+  const total=(s.schedule||[]).length;
+  const medals=['🥇','🥈','🥉'];
+  html+=`<div class="card">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:12px">
+      <p class="lbl" style="margin-bottom:0">搭檔排名</p>
+      <span class="pair-schedule-badge ${scored.length===total&&total>0?'done':'pending'}">${scored.length}/${total} 場完成</span>
+    </div>`;
+  pairRanks.forEach((r,i)=>{
+    html+=`<div class="pair-rank-row">
+      <div style="font-size:18px;width:28px;text-align:center;flex-shrink:0">${medals[i]||'#'+(i+1)}</div>
+      <div class="pair-rank-names">${r.pair[0]}<br><span style="color:var(--muted);font-weight:400">${r.pair[1]}</span></div>
+      <div style="font-size:12px;color:#94a3b8;min-width:40px;text-align:center">${r.wins}勝</div>
+      <div class="pair-rank-pts">${r.pts}</div>
+    </div>`;
+  });
+  html+=`</div>`;
+
+  // 待打賽程
+  const pending=(s.schedule||[]).filter(m=>m.scoreA===''||m.scoreB==='');
+  const done=(s.schedule||[]).filter(m=>m.scoreA!==''&&m.scoreB!=='');
+  if(pending.length){
+    html+=`<div class="card"><p class="lbl" style="margin-bottom:10px">待打賽程（${pending.length} 場）</p>
+      <div class="match-list">`;
+    pending.forEach(m=>{const mi=(s.schedule||[]).indexOf(m);html+=renderMatchCard(s,m,mi);});
+    html+=`</div></div>`;
+  }
+  if(done.length){
+    html+=`<div class="card">
+      <div class="hist-match-toggle" onclick="toggleHistMatches('pair_${id}')">
+        <span id="htoggle_pair_${id}">▶</span><span>已完成（${done.length} 場）</span>
+      </div>
+      <div id="hmatches_pair_${id}" style="display:none"><div class="match-list" style="margin-top:8px">`;
+    done.forEach(m=>{const mi=(s.schedule||[]).indexOf(m);html+=renderMatchCard(s,m,mi);});
+    html+=`</div></div></div>`;
+  }
+  el.innerHTML=html;
+}
+
+function swapPairMember(id,pi,slot,newName){
+  const s=getSess(id);if(!s||!s.pairs)return;
+  const oldName=s.pairs[pi][slot];
+  if(oldName===newName)return;
+  for(let i=0;i<s.pairs.length;i++){
+    for(let j=0;j<2;j++){
+      if(s.pairs[i][j]===newName){
+        s.pairs[i][j]=oldName;s.pairs[pi][slot]=newName;
+        localSave();pushToCloud(null);renderPairSessContent(id);return;
+      }
+    }
+  }
+}
+
+function reshufflePairs(id){
+  const s=getSess(id);if(!s)return;
+  const shuffled=shuffle([...s.attendees]);
+  s.pairs=[];
+  for(let i=0;i<shuffled.length;i+=2)s.pairs.push([shuffled[i],shuffled[i+1]]);
+  localSave();pushToCloud(null);renderPairSessContent(id);
+}
+
+function confirmPairs(id){
+  const s=getSess(id);if(!s||!s.pairs)return;
+  const all=s.pairs.flat();
+  if(new Set(all).size!==all.length){alert('有選手重複分配，請調整後再確認');return;}
+  s.pairsConfirmed=true;
+  pushToCloud(null);renderPairSessContent(id);
 }
 
 function renderMatchCard(s,m,mi){
@@ -970,18 +1162,24 @@ function toggleAttend(sid,name,el){
   document.querySelectorAll('.p-chip.on').forEach(c=>s.attendees.push(c.dataset.name));
   const ac=document.getElementById('ac_'+sid);if(ac)ac.textContent=s.attendees.length+' 人出席';
   // 即時更新確認按鈕狀態
+  const sess2=getSess(sid);
+  const isPair=sess2&&sess2.mode==='pair';
   const cfBtn=document.querySelector(`button[onclick="confirmAttendees('${sid}')"]`);
   if(cfBtn){
-    if(s.attendees.length<4){cfBtn.disabled=true;cfBtn.style.opacity='0.4';}
-    else{cfBtn.disabled=false;cfBtn.style.opacity='';}
+    const cnt=s.attendees.length;
+    const ok=isPair?(cnt>=4&&cnt%2===0):cnt>=4;
+    cfBtn.disabled=!ok;cfBtn.style.opacity=ok?'':'0.45';
   }
   localSave();
 }
 
 function confirmAttendees(sid){
   const s=getSess(sid);if(!s)return;
-  if((s.attendees||[]).length<4){alert('需要至少 4 人');return;}
+  const cnt=(s.attendees||[]).length;
+  if(cnt<4){alert('需要至少 4 人');return;}
+  if(s.mode==='pair'&&cnt%2!==0){alert('搭檔循環賽需要偶數人數');return;}
   s.attendeesConfirmed=true;
+  if(s.mode==='pair'){s.pairs=[];s.pairsConfirmed=false;s.schedule=[];s.matches=[];}
   pushToCloud(()=>{renderSessContent(sid);});
   // 自動滑到賽程區
   setTimeout(()=>{
@@ -997,6 +1195,7 @@ function editAttendees(sid){
     s.matches=[];
   }
   s.attendeesConfirmed=false;
+  if(s.mode==='pair'){s.pairs=[];s.pairsConfirmed=false;s.schedule=[];}
   pushToCloud(null);
   renderSessContent(sid);
 }
@@ -1012,7 +1211,7 @@ function addMatchCourt(sid,court){
   const m=drawMatch(s.attendees,s.matches,exclude);
   if(!m){alert('無法抽籤');return;}
   m.court=court;
-  // B場裁判要從兩場都沒上場的人中選（排除A場上場者和A場裁判）
+  // B場裁判從兩場都沒上的人中選
   if(court==='B'&&s.matches.length>0){
     const last=s.matches[s.matches.length-1];
     if(last.court==='A'){
@@ -1207,11 +1406,17 @@ function confirmEditPlayer(i){
   const oldName=players[i];
   sessions.forEach(s=>{
     if(s.attendees)s.attendees=s.attendees.map(p=>p===oldName?newName:p);
+    // 搭檔賽：同步 pairs
+    if(s.pairs)s.pairs=s.pairs.map(pair=>pair.map(p=>p===oldName?newName:p));
     if(s.matches)s.matches.forEach(m=>{
       if(m.teamA)m.teamA=m.teamA.map(p=>p===oldName?newName:p);
       if(m.teamB)m.teamB=m.teamB.map(p=>p===oldName?newName:p);
       if(m.waiting)m.waiting=m.waiting.map(p=>p===oldName?newName:p);
       if(m.referee===oldName)m.referee=newName;
+    });
+    if(s.schedule)s.schedule.forEach(m=>{
+      if(m.teamA)m.teamA=m.teamA.map(p=>p===oldName?newName:p);
+      if(m.teamB)m.teamB=m.teamB.map(p=>p===oldName?newName:p);
     });
   });
   players[i]=newName;
