@@ -203,6 +203,20 @@ input:focus{outline:3px solid rgba(96,165,250,.18);border-color:rgba(59,130,246,
 .pair-rank-row{display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:16px;background:rgba(255,255,255,.84);border:1px solid var(--line);margin-bottom:6px}
 .pair-rank-names{flex:1;font-size:13px;font-weight:700;line-height:1.5}
 .pair-rank-pts{font-size:16px;font-weight:800;min-width:36px;text-align:right}
+/* ── 場地分組 ── */
+.court-split{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px}
+.court-col{border-radius:18px;padding:12px 14px;border:2px solid var(--line);background:rgba(255,255,255,.82)}
+.court-col.courtA{border-color:rgba(59,130,246,.35);background:rgba(239,246,255,.7)}
+.court-col.courtB{border-color:rgba(16,185,129,.35);background:rgba(236,253,245,.7)}
+.court-col-title{font-size:13px;font-weight:800;margin-bottom:8px}
+.court-col.courtA .court-col-title{color:#2563eb}
+.court-col.courtB .court-col-title{color:#047857}
+.court-pair-chip{display:flex;align-items:center;justify-content:space-between;padding:6px 8px;border-radius:10px;font-size:13px;margin-bottom:4px;background:rgba(255,255,255,.72);border:1px solid var(--line)}
+.court-pair-chip .mv-btn{font-size:11px;padding:3px 8px;border-radius:999px;border:1px solid var(--line);background:rgba(255,255,255,.9);cursor:pointer;color:var(--muted);font-family:inherit;font-weight:600}
+.court-section-title{font-size:12px;font-weight:800;color:var(--muted);margin-bottom:8px;margin-top:4px;letter-spacing:.04em;display:flex;align-items:center;gap:6px}
+.court-badge{font-size:11px;padding:2px 8px;border-radius:999px;font-weight:700}
+.court-badge.a{background:#eff6ff;color:#2563eb}
+.court-badge.b{background:#f0fdf4;color:#047857}
 .swap-player{padding:10px 12px;border-radius:14px;border:2px solid var(--line);background:rgba(255,255,255,.9);cursor:pointer;font-size:13px;font-weight:700;text-align:center;transition:.15s}
 .swap-player.on{border-color:#3b82f6;background:#eff6ff;color:#1d4ed8}
 .swap-sub{display:grid;grid-template-columns:repeat(auto-fill,minmax(80px,1fr));gap:8px;margin-top:10px}
@@ -330,6 +344,7 @@ input:focus{outline:3px solid rgba(96,165,250,.18);border-color:rgba(59,130,246,
   <div class="card">
     <p class="lbl" style="margin-bottom:4px">雲端設定</p>
     <p style="font-size:12px;color:#aaa;margin-bottom:8px">Google Apps Script Web App URL</p>
+    <p style="font-size:11px;color:#f59e0b;margin-bottom:8px">⚠️ 如需跨裝置同步「選手程度」，請確認 Apps Script 版本支援 playerLevels 欄位</p>
     <input type="text" id="cfgUrl" placeholder="貼上 Web App URL" style="width:100%;margin-bottom:8px">
     <button type="button" class="btn primary" onclick="saveCfg()">儲存並同步</button>
   </div>
@@ -377,11 +392,13 @@ function initials(n){return n.trim().slice(0,2).toUpperCase();}
    狀態
    ================================================ */
 let players=[], sessions=[], winPts=WIN_PTS_DEFAULT;
+let playerLevels={};// {name: "strong"|"mid"|"weak"}
 let activeSessionId=null, adminUnlocked=false, pendingAdminAction=null;
 let sessionBrowseDate='';
 const liveScores={};
 let WEB_APP_URL=FIXED_WEB_APP_URL||localStorage.getItem('bm_url')||'';
 
+function escapeHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 function genId(){return Date.now().toString(36)+Math.random().toString(36).slice(2,6);}
 function fmtDate(d){if(!d)return'';const p=d.split('-');return p[0]+'/'+(+p[1])+'/'+(+p[2]);}
 function fmtNow(){const t=new Date();return t.getHours()+':'+String(t.getMinutes()).padStart(2,'0');}
@@ -435,12 +452,14 @@ function localSave(){
   localStorage.setItem('bm_players',JSON.stringify(players));
   localStorage.setItem('bm_sessions',JSON.stringify(sessions));
   localStorage.setItem('bm_winPts',String(winPts));
+  localStorage.setItem('bm_levels',JSON.stringify(playerLevels));
 }
 function localLoad(){
   players=JSON.parse(localStorage.getItem('bm_players')||'null')||DEFAULT_PLAYERS.slice();
   sessions=JSON.parse(localStorage.getItem('bm_sessions')||'[]');
   winPts=parseInt(localStorage.getItem('bm_winPts')||String(WIN_PTS_DEFAULT))||WIN_PTS_DEFAULT;
   WEB_APP_URL=FIXED_WEB_APP_URL||localStorage.getItem('bm_url')||'';
+  playerLevels=JSON.parse(localStorage.getItem('bm_levels')||'{}');
 }
 
 /* ================================================
@@ -471,12 +490,25 @@ async function pullFromCloud(){
         // 保留本地尚未推上雲端的狀態
         if(local&&local.attendeesConfirmed&&!s.attendeesConfirmed)s.attendeesConfirmed=true;
         if(local&&local.pairsConfirmed&&!s.pairsConfirmed)s.pairsConfirmed=true;
-        if(local&&local.pairs&&local.pairs.length&&!(s.pairs&&s.pairs.length))s.pairs=local.pairs;
+        // pairs：只要本地有且 pairsConfirmed=false 就以本地為準（避免調換搭檔後被雲端蓋掉）
+        if(local&&local.pairs&&local.pairs.length&&!local.pairsConfirmed)s.pairs=local.pairs;
+        else if(local&&local.pairs&&local.pairs.length&&!(s.pairs&&s.pairs.length))s.pairs=local.pairs;
+        // schedule：本地有就保留
         if(local&&local.schedule&&local.schedule.length&&!(s.schedule&&s.schedule.length))s.schedule=local.schedule;
+        // courtGroups：保留本地
+        if(local&&local.courtGroups&&!s.courtGroups)s.courtGroups=local.courtGroups;
+        // 搭檔賽：JSON 序列化後 s.matches 和 s.schedule 的 reference 斷掉，需重建
+        if(s.mode==='pair'&&s.schedule&&s.schedule.length){
+          // 用 id 對齊，確保 matches 和 schedule 內容一致
+          const schedMap={};s.schedule.forEach(m=>{schedMap[m.id]=m;});
+          s.matches=s.schedule;
+          if(s.matches)s.matches.forEach(m=>{if(schedMap[m.id])Object.assign(schedMap[m.id],{scoreA:m.scoreA,scoreB:m.scoreB});});
+        }
         return s;
       });
     }
     if(data.winPts)winPts=data.winPts;
+    if(data.playerLevels)playerLevels=data.playerLevels;
     localSave();
     setSyncBadge('ok','同步 '+fmtNow());
     renderAll();
@@ -488,7 +520,7 @@ async function pushToCloud(cb){
   try{
     const res=await fetch(WEB_APP_URL,{method:'POST',body:JSON.stringify({
       action:'saveAll',password:localStorage.getItem('bm_pw')||'__public__',
-      players,sessions,winPts,ranking:getTotals()
+      players,sessions,winPts,ranking:getTotals(),playerLevels
     })});
     const json=await res.json();
     if(json.ok){localSave();setSyncBadge('ok','同步 '+fmtNow());if(cb)cb();}
@@ -566,9 +598,41 @@ function drawMatch(attendees,existingMatches,excludePlayers){
   const pool=sorted.filter(p=>playCount[p]<=minC);
   const cands=(pool.length>=4?pool:sorted).slice(0,Math.max(4,pool.length));
   const picked=shuffle(cands).slice(0,4);
+
+  // ── 程度配對邏輯 ──
+  // 各組3種分法，選程度最均衡的（優先強弱搭配，全輪完後才強強/弱弱）
+  const lv=p=>(playerLevels[p]||'mid');
+  const lvScore={'strong':2,'mid':1,'weak':0};
+  // 計算一場裡 teamA+teamB 的程度差距（越小越均衡）
+  function teamBalance(tA,tB){
+    const sA=lvScore[lv(tA[0])]+lvScore[lv(tA[1])];
+    const sB=lvScore[lv(tB[0])]+lvScore[lv(tB[1])];
+    return Math.abs(sA-sB); // 0=最均衡，4=最懸殊
+  }
+  // 計算一個搭檔內的程度差（優先強弱搭配=2，強中/弱中=1，強強/弱弱=0）
+  function pairDiversity(tA,tB){
+    const d=p=>Math.abs(lvScore[lv(tA[0])]-lvScore[lv(tA[1])])+Math.abs(lvScore[lv(tB[0])]-lvScore[lv(tB[1])]);
+    return d();
+  }
+  // 是否已有強弱搭配存在（如果已有則允許同等級配對）
+  const hasStrongWeakPairs=(existingMatches||[]).some(m=>{
+    const checkPair=(t)=>Math.abs(lvScore[lv(t[0])]-lvScore[lv(t[1])])===2;
+    return checkPair(m.teamA)||checkPair(m.teamB);
+  });
   const combos=[[[picked[0],picked[1]],[picked[2],picked[3]]],[[picked[0],picked[2]],[picked[1],picked[3]]],[[picked[0],picked[3]],[picked[1],picked[2]]]];
   const gps=(a,b)=>pairCount[[a,b].sort().join('|')]||0;
-  combos.sort((x,y)=>(gps(x[0][0],x[0][1])+gps(x[1][0],x[1][1]))-(gps(y[0][0],y[0][1])+gps(y[1][0],y[1][1])));
+  combos.sort((x,y)=>{
+    // 先以程度均衡度排序（搭檔內強弱差異大 = 優先）
+    const divX=pairDiversity(x[0],x[1]);
+    const divY=pairDiversity(y[0],y[1]);
+    if(divX!==divY)return divY-divX; // 差異大的優先
+    // 再以場面均衡度排序（兩隊實力接近 = 優先）
+    const balX=teamBalance(x[0],x[1]);
+    const balY=teamBalance(y[0],y[1]);
+    if(balX!==balY)return balX-balY;
+    // 最後以同隊次數排序（減少重複搭檔）
+    return (gps(x[0][0],x[0][1])+gps(x[1][0],x[1][1]))-(gps(y[0][0],y[0][1])+gps(y[1][0],y[1][1]));
+  });
   const teamA=combos[0][0],teamB=combos[0][1];
   const waiting=attendees.filter(p=>![...teamA,...teamB,...excludePlayers].includes(p));
   // 從 waiting 中挑裁判次數最少的人
@@ -610,7 +674,7 @@ function renderRank(){
   const totals=getTotals();
   const maxScore=Math.max(...totals.map(t=>t.total),1);
   document.getElementById('metricCards').innerHTML=`
-    <div class="metric"><div class="ml">目前領先</div><div class="mv">${totals[0]&&totals[0].total>0?totals[0].name:'—'}</div></div>
+    <div class="metric"><div class="ml">目前領先</div><div class="mv">${totals&&totals[0]&&totals[0].total>0?escapeHtml(totals[0].name):'—'}</div></div>
     <div class="metric"><div class="ml">活動場次</div><div class="mv">${sessions.length}</div></div>
     <div class="metric"><div class="ml">參賽人數</div><div class="mv">${players.length}</div></div>`;
   const medals=['🥇','🥈','🥉'];
@@ -817,6 +881,50 @@ function allCombos2(arr){
   return res;
 }
 
+// 重排賽程：讓同一組盡量分散，最多連打 maxConsec 場
+function scheduleOrder(matches, maxConsec){
+  maxConsec=maxConsec||2;
+  const result=[];
+  const remaining=shuffle([...matches]); // 先隨機打亂增加多樣性
+
+  function recentConsec(pairIdx){
+    let cnt=0;
+    for(let i=result.length-1;i>=0;i--){
+      if(result[i].pairIdxA===pairIdx||result[i].pairIdxB===pairIdx)cnt++;
+      else break;
+    }
+    return cnt;
+  }
+
+  while(remaining.length){
+    // 候選：不超過 maxConsec 連打的場次
+    let candidates=remaining.map((_,i)=>i).filter(i=>{
+      const m=remaining[i];
+      return recentConsec(m.pairIdxA)<maxConsec&&recentConsec(m.pairIdxB)<maxConsec;
+    });
+    // 放寬一格
+    if(!candidates.length){
+      candidates=remaining.map((_,i)=>i).filter(i=>{
+        const m=remaining[i];
+        return recentConsec(m.pairIdxA)<=maxConsec&&recentConsec(m.pairIdxB)<=maxConsec;
+      });
+    }
+    if(!candidates.length)candidates=[0];
+
+    // 優先讓最久沒上場的組上場
+    const lastSeen={};
+    result.forEach((m,j)=>{lastSeen[m.pairIdxA]=j;lastSeen[m.pairIdxB]=j;});
+    candidates.sort((ia,ib)=>{
+      const ma=remaining[ia],mb=remaining[ib];
+      const laA=lastSeen[ma.pairIdxA]??-999,laB=lastSeen[ma.pairIdxB]??-999;
+      const lbA=lastSeen[mb.pairIdxA]??-999,lbB=lastSeen[mb.pairIdxB]??-999;
+      return Math.max(laA,laB)-Math.max(lbA,lbB); // 越早出現越優先
+    });
+    result.push(remaining.splice(candidates[0],1)[0]);
+  }
+  return result;
+}
+
 function renderPairSessContent(id){
   const s=getSess(id);if(!s)return;
   const el=document.getElementById('sessContent');
@@ -856,10 +964,10 @@ function renderPairSessContent(id){
 
   // 步驟二：分配搭檔
   if(!s.pairsConfirmed){
+    // 注意：pairs 初始化只在 confirmAttendees 時觸發，這裡不再重置
+    // 若 pairs 意外遺失才補救（不推雲端，避免覆蓋）
     if(!s.pairs||!s.pairs.length){
-      const shuffled=shuffle([...s.attendees]);
-      s.pairs=[];
-      for(let i=0;i<shuffled.length;i+=2)s.pairs.push([shuffled[i],shuffled[i+1]]);
+      s.pairs=makeLevelPairs(s.attendees);
       localSave();
     }
     html+=`<div class="card">
@@ -886,15 +994,46 @@ function renderPairSessContent(id){
     el.innerHTML=html;return;
   }
 
-  // 步驟三：產生循環賽賽程
-  if(!s.schedule||!s.schedule.length){
-    const combos=allCombos2(s.pairs.map((_,i)=>i));
-    s.schedule=combos.map(([ia,ib])=>({
-      id:genId(),teamA:[...s.pairs[ia]],teamB:[...s.pairs[ib]],
-      pairIdxA:ia,pairIdxB:ib,scoreA:'',scoreB:''
-    }));
-    s.matches=s.schedule;
+  // 步驟三：分場地
+  if(!s.courtGroups){
+    // 預設前半組在A場、後半組在B場
+    const half=Math.floor(s.pairs.length/2);
+    s.courtGroups={A:s.pairs.map((_,i)=>i).slice(0,half+s.pairs.length%2),B:s.pairs.map((_,i)=>i).slice(half+s.pairs.length%2)};
     localSave();pushToCloud(null);
+  }
+
+  // 場地分組顯示（可手動調整）
+  if(!s.schedule||!s.schedule.length){
+    const cg=s.courtGroups;
+    html+=`<div class="card">
+      <p class="lbl" style="margin-bottom:4px">步驟三：場地分組</p>
+      <p style="font-size:12px;color:#aaa;margin-bottom:12px">每場地內的組互相循環，完成後兩場地互換再循環</p>
+      <div class="court-split">
+        <div class="court-col courtA">
+          <div class="court-col-title">🔵 場地 A</div>
+          ${cg.A.map(pi=>`<div class="court-pair-chip">
+            <span>${s.pairs[pi][0]} & ${s.pairs[pi][1]}</span>
+            <button class="mv-btn" onclick="movePairCourt('${id}',${pi},'A')">→ B</button>
+          </div>`).join('')}
+        </div>
+        <div class="court-col courtB">
+          <div class="court-col-title">🟢 場地 B</div>
+          ${cg.B.map(pi=>`<div class="court-pair-chip">
+            <span>${s.pairs[pi][0]} & ${s.pairs[pi][1]}</span>
+            <button class="mv-btn" onclick="movePairCourt('${id}',${pi},'B')">← A</button>
+          </div>`).join('')}
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button type="button" class="btn sm" onclick="resetCourtGroups('${id}')">🔀 重新分場地</button>
+        <button type="button" class="btn success" onclick="generateCourtSchedule('${id}')"
+          ${cg.A.length>=2&&cg.B.length>=2?'':cg.A.length>=2||cg.B.length>=2?'':'disabled style="opacity:0.45"'}>
+          確認並產生賽程 →
+        </button>
+        ${cg.A.length<2||cg.B.length<2?`<p style="font-size:11px;color:#f59e0b;margin-top:6px">⚠️ 場地少於2組時該場地不進行循環賽</p>`:''}
+      </div>
+    </div>`;
+    el.innerHTML=html;return;
   }
 
   // 搭檔排名
@@ -907,12 +1046,22 @@ function renderPairSessContent(id){
   const scored=(s.schedule||[]).filter(m=>m.scoreA!==''&&m.scoreB!=='');
   const total=(s.schedule||[]).length;
   const medals=['🥇','🥈','🥉'];
+
+  // 場地進度
+  const cg=s.courtGroups;
+  const r1A=(s.schedule||[]).filter(m=>m.round===1&&m.court==='A');
+  const r1B=(s.schedule||[]).filter(m=>m.round===1&&m.court==='B');
+  const r2A=(s.schedule||[]).filter(m=>m.round===2&&m.court==='A');
+  const r2B=(s.schedule||[]).filter(m=>m.round===2&&m.court==='B');
+  const r1Done=(r1A.length>0||r1B.length>0)&&r1A.every(m=>m.scoreA!==''&&m.scoreB!=='')&&r1B.every(m=>m.scoreA!==''&&m.scoreB!=='');
+
   html+=`<div class="card">
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:12px">
       <p class="lbl" style="margin-bottom:0">搭檔排名</p>
       <span class="pair-schedule-badge ${scored.length===total&&total>0?'done':'pending'}">${scored.length}/${total} 場完成</span>
     </div>`;
   pairRanks.forEach((r,i)=>{
+    const courtLabel=cg?((cg.A.includes(r.pi)?'🔵':'🟢')):'';
     html+=`<div class="pair-rank-row">
       <div style="font-size:18px;width:28px;text-align:center;flex-shrink:0">${medals[i]||'#'+(i+1)}</div>
       <div class="pair-rank-names">${r.pair[0]}<br><span style="color:var(--muted);font-weight:400">${r.pair[1]}</span></div>
@@ -922,25 +1071,79 @@ function renderPairSessContent(id){
   });
   html+=`</div>`;
 
-  // 待打賽程
-  const pending=(s.schedule||[]).filter(m=>m.scoreA===''||m.scoreB==='');
-  const done=(s.schedule||[]).filter(m=>m.scoreA!==''&&m.scoreB!=='');
-  if(pending.length){
-    html+=`<div class="card"><p class="lbl" style="margin-bottom:10px">待打賽程（${pending.length} 場）</p>
-      <div class="match-list">`;
-    pending.forEach(m=>{const mi=(s.schedule||[]).indexOf(m);html+=renderMatchCard(s,m,mi);});
-    html+=`</div></div>`;
+  // 第一輪賽程
+  function renderRoundSection(matches, title, badge){
+    const pend=matches.filter(m=>m.scoreA===''||m.scoreB==='');
+    const dn=matches.filter(m=>m.scoreA!==''&&m.scoreB!=='');
+    let h=`<div class="card">
+      <div class="court-section-title">${title}<span class="court-badge ${badge}">${dn.length}/${matches.length} 完成</span></div>`;
+    if(pend.length){h+=`<div class="match-list">`;pend.forEach(m=>{const mi=(s.schedule||[]).indexOf(m);h+=renderMatchCard(s,m,mi);});h+=`</div>`;}
+    if(dn.length){h+=`<div class="hist-match-toggle" onclick="toggleHistMatches('${id}_${badge}_done')"><span id="htoggle_${id}_${badge}_done">▶</span><span>已完成（${dn.length} 場）</span></div><div id="hmatches_${id}_${badge}_done" style="display:none"><div class="match-list" style="margin-top:8px">`;dn.forEach(m=>{const mi=(s.schedule||[]).indexOf(m);h+=renderMatchCard(s,m,mi);});h+=`</div></div>`;}
+    h+=`</div>`;
+    return h;
   }
-  if(done.length){
-    html+=`<div class="card">
-      <div class="hist-match-toggle" onclick="toggleHistMatches('pair_${id}')">
-        <span id="htoggle_pair_${id}">▶</span><span>已完成（${done.length} 場）</span>
-      </div>
-      <div id="hmatches_pair_${id}" style="display:none"><div class="match-list" style="margin-top:8px">`;
-    done.forEach(m=>{const mi=(s.schedule||[]).indexOf(m);html+=renderMatchCard(s,m,mi);});
-    html+=`</div></div></div>`;
+
+  if(r1A.length||r1B.length){
+    if(r1A.length)html+=renderRoundSection(r1A,'第一輪・場地 A','a');
+    if(r1B.length)html+=renderRoundSection(r1B,'第一輪・場地 B','b');
   }
+  if(r2A.length||r2B.length){
+    if(!r1Done){
+      html+=`<div class="card" style="text-align:center;color:#94a3b8;font-size:13px;padding:18px">第一輪全部完成後，第二輪賽程會自動解鎖</div>`;
+    }else{
+      if(r2A.length)html+=renderRoundSection(r2A,'第二輪・場地 A（互換）','a');
+      if(r2B.length)html+=renderRoundSection(r2B,'第二輪・場地 B（互換）','b');
+    }
+  }
+
   el.innerHTML=html;
+}
+
+function movePairCourt(id,pi,fromCourt){
+  const s=getSess(id);if(!s||!s.courtGroups)return;
+  const cg=s.courtGroups;
+  if(fromCourt==='A'){cg.A=cg.A.filter(x=>x!==pi);cg.B.push(pi);}
+  else{cg.B=cg.B.filter(x=>x!==pi);cg.A.push(pi);}
+  localSave();pushToCloud(null);renderPairSessContent(id);
+}
+
+function resetCourtGroups(id){
+  const s=getSess(id);if(!s)return;
+  const half=Math.floor(s.pairs.length/2);
+  s.courtGroups={A:s.pairs.map((_,i)=>i).slice(0,half+s.pairs.length%2),B:s.pairs.map((_,i)=>i).slice(half+s.pairs.length%2)};
+  localSave();pushToCloud(null);renderPairSessContent(id);
+}
+
+function generateCourtSchedule(id){
+  const s=getSess(id);if(!s||!s.courtGroups)return;
+  const cg=s.courtGroups;
+  // 單組場地自動跳過（不報錯）
+
+  // 第一輪：A場 cg.A 內循環，B場 cg.B 內循環
+  // 第二輪：互換 → A場 cg.B 內循環，B場 cg.A 內循環
+  function makeCourt(pairIdxs, court, round){
+    const combos=allCombos2(pairIdxs);
+    return scheduleOrder(combos.map(([ia,ib])=>({
+      id:genId(),teamA:[...s.pairs[ia]],teamB:[...s.pairs[ib]],
+      pairIdxA:ia,pairIdxB:ib,court,round,scoreA:'',scoreB:''
+    })),2);
+  }
+  const r1A=makeCourt(cg.A,'A',1);
+  const r1B=makeCourt(cg.B,'B',1);
+  const r2A=makeCourt(cg.B,'A',2); // 互換
+  const r2B=makeCourt(cg.A,'B',2);
+
+  // 交錯排列：同一時間 A、B 場各打一場
+  const interleaved=[];
+  const maxLen=Math.max(r1A.length,r1B.length);
+  for(let i=0;i<maxLen;i++){if(r1A[i])interleaved.push(r1A[i]);if(r1B[i])interleaved.push(r1B[i]);}
+  const maxLen2=Math.max(r2A.length,r2B.length);
+  for(let i=0;i<maxLen2;i++){if(r2A[i])interleaved.push(r2A[i]);if(r2B[i])interleaved.push(r2B[i]);}
+
+  s.schedule=interleaved;
+  s.matches=s.schedule;
+  localSave();pushToCloud(null);
+  renderPairSessContent(id);
 }
 
 function swapPairMember(id,pi,slot,newName){
@@ -951,7 +1154,10 @@ function swapPairMember(id,pi,slot,newName){
     for(let j=0;j<2;j++){
       if(s.pairs[i][j]===newName){
         s.pairs[i][j]=oldName;s.pairs[pi][slot]=newName;
-        localSave();pushToCloud(null);renderPairSessContent(id);return;
+        localSave();
+        renderPairSessContent(id);
+        pushToCloud(null);
+        return;
       }
     }
   }
@@ -959,10 +1165,34 @@ function swapPairMember(id,pi,slot,newName){
 
 function reshufflePairs(id){
   const s=getSess(id);if(!s)return;
-  const shuffled=shuffle([...s.attendees]);
-  s.pairs=[];
-  for(let i=0;i<shuffled.length;i+=2)s.pairs.push([shuffled[i],shuffled[i+1]]);
-  localSave();pushToCloud(null);renderPairSessContent(id);
+  s.pairs=makeLevelPairs(s.attendees);
+  s.courtGroups=null; // pairs index 變了，場地分組需重置
+  s.schedule=[];s.matches=[];
+  localSave();
+  renderPairSessContent(id);
+  pushToCloud(null);
+}
+
+// 搭檔賽分組：優先強弱搭配，剩餘的同等級配對
+function makeLevelPairs(attendees){
+  const lvScore={'strong':2,'mid':1,'weak':0};
+  const lv=p=>playerLevels[p]||'mid';
+  const strong=shuffle(attendees.filter(p=>lv(p)==='strong'));
+  const mid=shuffle(attendees.filter(p=>lv(p)==='mid'));
+  const weak=shuffle(attendees.filter(p=>lv(p)==='weak'));
+  const pairs=[];
+  // 先配強弱
+  while(strong.length&&weak.length){pairs.push([strong.pop(),weak.pop()]);}
+  // 剩強配中
+  while(strong.length&&mid.length){pairs.push([strong.pop(),mid.pop()]);}
+  // 剩弱配中
+  while(weak.length&&mid.length){pairs.push([weak.pop(),mid.pop()]);}
+  // 同等級配對
+  const remain=shuffle([...strong,...mid,...weak]);
+  for(let i=0;i<remain.length;i+=2){
+    if(remain[i+1])pairs.push([remain[i],remain[i+1]]);
+  }
+  return pairs;
 }
 
 function confirmPairs(id){
@@ -980,8 +1210,6 @@ function renderMatchCard(s,m,mi){
   const sb=isDone?parseInt(m.scoreB):live.b;
   const aWin=sa>sb,bWin=sb>sa;
   const court=m.court||'';
-  const nameA=(m.teamA||[]).join(' & ');
-  const nameB=(m.teamB||[]).join(' & ');
   let body='';
   if(isDone){
     body=`<div class="sb">
@@ -1179,7 +1407,7 @@ function confirmAttendees(sid){
   if(cnt<4){alert('需要至少 4 人');return;}
   if(s.mode==='pair'&&cnt%2!==0){alert('搭檔循環賽需要偶數人數');return;}
   s.attendeesConfirmed=true;
-  if(s.mode==='pair'){s.pairs=[];s.pairsConfirmed=false;s.schedule=[];s.matches=[];}
+  if(s.mode==='pair'){s.pairs=makeLevelPairs(s.attendees);s.pairsConfirmed=false;s.courtGroups=null;s.schedule=[];s.matches=[];}
   pushToCloud(()=>{renderSessContent(sid);});
   // 自動滑到賽程區
   setTimeout(()=>{
@@ -1195,7 +1423,7 @@ function editAttendees(sid){
     s.matches=[];
   }
   s.attendeesConfirmed=false;
-  if(s.mode==='pair'){s.pairs=[];s.pairsConfirmed=false;s.schedule=[];}
+  if(s.mode==='pair'){s.pairs=[];s.pairsConfirmed=false;s.courtGroups=null;s.schedule=[];}
   pushToCloud(null);
   renderSessContent(sid);
 }
@@ -1375,15 +1603,31 @@ function renderPlayerList(){
   if(!players.length){pl.innerHTML='<div class="empty">尚無選手</div>';return;}
   let html='<div style="display:flex;flex-direction:column">';
   players.forEach((p,i)=>{
+    const lv=playerLevels[p]||'mid';
+    const lvColor=lv==='strong'?'#2563eb':lv==='weak'?'#059669':'#92400e';
+    const lvBg=lv==='strong'?'#eff6ff':lv==='weak'?'#f0fdf4':'#fffbeb';
+    const lvLabel=lv==='strong'?'強💪':lv==='weak'?'弱🌱':'中🙂';
     html+=`<div class="player-row" id="prow_${i}">
       <div class="avatar" style="background:${avBg(i)};color:${avFg(i)};width:28px;height:28px;font-size:11px;flex-shrink:0">${initials(p)}</div>
       <span style="flex:1;font-size:13px">${p}</span>
-      <button type="button" class="btn sm" onclick="startEditPlayer(${i})" style="margin-right:4px">改名</button>
+      <select style="font-size:12px;padding:4px 6px;border-radius:8px;border:1px solid var(--line);background:${lvBg};color:${lvColor};font-weight:700;cursor:pointer;font-family:inherit"
+        onchange="setPlayerLevel('${p.replace(/'/g,"\'")}',this.value)">
+        <option value="strong"${lv==='strong'?' selected':''}>強💪</option>
+        <option value="mid"${lv==='mid'?' selected':''}>中🙂</option>
+        <option value="weak"${lv==='weak'?' selected':''}>弱🌱</option>
+      </select>
+      <button type="button" class="btn sm" onclick="startEditPlayer(${i})" style="margin:0 4px">改名</button>
       <button type="button" class="btn sm danger" onclick="removePlayer(${i})">移除</button>
     </div>`;
   });
   html+='</div>';
   pl.innerHTML=html;
+}
+
+function setPlayerLevel(name,level){
+  playerLevels[name]=level;
+  pushToCloud(null);
+  renderPlayerList();
 }
 function startEditPlayer(i){
   const row=document.getElementById('prow_'+i);if(!row)return;
@@ -1419,12 +1663,14 @@ function confirmEditPlayer(i){
       if(m.teamB)m.teamB=m.teamB.map(p=>p===oldName?newName:p);
     });
   });
+  if(playerLevels[oldName]!==undefined){playerLevels[newName]=playerLevels[oldName];delete playerLevels[oldName];}
   players[i]=newName;
   pushToCloud(()=>{renderPlayerList();renderRank();renderHistory();});
 }
 function removePlayer(i){
   if(!confirm('確定移除「'+players[i]+'」？'))return;
-  players.splice(i,1);pushToCloud(null);renderPlayerList();renderRank();
+  const removed=players[i];
+  players.splice(i,1);delete playerLevels[removed];pushToCloud(null);renderPlayerList();renderRank();
 }
 function clearAll(){sessions=[];activeSessionId=null;pushToCloud(()=>{document.getElementById('sessContent').innerHTML='';renderAll();});}
 
