@@ -592,18 +592,40 @@ function drawMatch(attendees,existingMatches,excludePlayers){
     });
   });
 
+  const gps=(a,b)=>pairCount[[a,b].sort().join('|')]||0;
+
+  // ── 從候選人中找出搭檔次數加總最少的 4 人組合 ──
   const sorted=[...avail].sort((a,b)=>playCount[a]-playCount[b]);
   const minC=playCount[sorted[0]];
-  // 取上場次數最少的人優先
   const pool=sorted.filter(p=>playCount[p]<=minC);
-  const cands=(pool.length>=4?pool:sorted).slice(0,Math.max(4,pool.length));
-  const picked=shuffle(cands).slice(0,4);
+  // 候選池：上場次數最少的人，不足 4 人才往後補
+  const cands=(pool.length>=4?pool:sorted).slice(0,Math.min(8,sorted.length));
 
-  // ── 搭檔優先邏輯：未曾搭檔過的組合優先 ──
+  // 從候選池列舉所有 C(n,4) 組合，找搭檔歷史最少的 4 人
+  let bestFour=null,bestScore=Infinity;
+  const candShuffled=shuffle(cands);
+  // 最多嘗試 30 種組合（避免人數多時太慢）
+  const attempts=[];
+  for(let i=0;i<candShuffled.length;i++)
+    for(let j=i+1;j<candShuffled.length;j++)
+      for(let k=j+1;k<candShuffled.length;k++)
+        for(let l=k+1;l<candShuffled.length;l++)
+          attempts.push([candShuffled[i],candShuffled[j],candShuffled[k],candShuffled[l]]);
+  shuffle(attempts).slice(0,60).forEach(four=>{
+    // 3 種分法中最小的搭檔次數
+    const opts=[
+      gps(four[0],four[1])+gps(four[2],four[3]),
+      gps(four[0],four[2])+gps(four[1],four[3]),
+      gps(four[0],four[3])+gps(four[1],four[2])
+    ];
+    const s=Math.min(...opts);
+    if(s<bestScore){bestScore=s;bestFour=four;}
+  });
+  const picked=bestFour||candShuffled.slice(0,4);
+
+  // 3 種分法中取搭檔次數最少的
   const combos=[[[picked[0],picked[1]],[picked[2],picked[3]]],[[picked[0],picked[2]],[picked[1],picked[3]]],[[picked[0],picked[3]],[picked[1],picked[2]]]];
-  const gps=(a,b)=>pairCount[[a,b].sort().join('|')]||0;
   combos.sort((x,y)=>{
-    // 同隊次數越少越優先（兩隊搭檔次數加總）
     const xScore=gps(x[0][0],x[0][1])+gps(x[1][0],x[1][1]);
     const yScore=gps(y[0][0],y[0][1])+gps(y[1][0],y[1][1]);
     return xScore-yScore;
