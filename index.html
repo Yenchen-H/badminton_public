@@ -583,14 +583,20 @@ function drawMatch(attendees,existingMatches,excludePlayers){
     [...m.teamA,...m.teamB].forEach(p=>{if(playCount[p]!==undefined)playCount[p]++;});
   });
 
-  // 同隊次數：只統計有比分的場次（避免搭檔賽 schedule 的未打場次干擾）
+  // 同隊次數：統計所有場次（含歷史）有比分的搭檔，確保跨場次也能避免重複搭檔
   const pairCount={};
-  (existingMatches||[]).filter(m=>m.scoreA!==''||m.scoreB!=='').forEach(m=>{
-    [[m.teamA[0],m.teamA[1]],[m.teamB[0],m.teamB[1]]].forEach(function(pair){
-      var a=pair[0],b=pair[1];if(!a||!b)return;
-      var key=[a,b].sort().join('|');pairCount[key]=(pairCount[key]||0)+1;
+  function countPairs(matches){
+    (matches||[]).filter(m=>m.scoreA!==''||m.scoreB!=='').forEach(m=>{
+      [[m.teamA&&m.teamA[0],m.teamA&&m.teamA[1]],[m.teamB&&m.teamB[0],m.teamB&&m.teamB[1]]].forEach(function(pair){
+        var a=pair[0],b=pair[1];if(!a||!b)return;
+        var key=[a,b].sort().join('|');pairCount[key]=(pairCount[key]||0)+1;
+      });
     });
-  });
+  }
+  // 先統計所有歷史場次
+  sessions.forEach(s=>countPairs(s.matches));
+  // 再統計當前場次（若當前場次不在 sessions 裡，補統計）
+  countPairs(existingMatches);
 
   const gps=(a,b)=>pairCount[[a,b].sort().join('|')]||0;
 
