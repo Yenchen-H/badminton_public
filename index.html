@@ -599,37 +599,44 @@ function drawMatch(attendees,existingMatches,excludePlayers){
   countPairs(existingMatches);
 
   const gps=(a,b)=>pairCount[[a,b].sort().join('|')]||0;
+  const maxPlay=Math.max(...avail.map(p=>playCount[p]),1);
 
-  // ── 從候選人中找出搭檔次數加總最少的 4 人組合 ──
-  const sorted=[...avail].sort((a,b)=>playCount[a]-playCount[b]);
-  const minC=playCount[sorted[0]];
-  const pool=sorted.filter(p=>playCount[p]<=minC);
-  // 候選池：上場次數最少的人，不足 4 人才往後補
-  const cands=(pool.length>=4?pool:sorted).slice(0,Math.min(8,sorted.length));
-
-  // 從候選池列舉所有 C(n,4) 組合，找搭檔歷史最少的 4 人
-  let bestFour=null,bestScore=Infinity;
-  const candShuffled=shuffle(cands);
-  // 最多嘗試 30 種組合（避免人數多時太慢）
-  const attempts=[];
-  for(let i=0;i<candShuffled.length;i++)
-    for(let j=i+1;j<candShuffled.length;j++)
-      for(let k=j+1;k<candShuffled.length;k++)
-        for(let l=k+1;l<candShuffled.length;l++)
-          attempts.push([candShuffled[i],candShuffled[j],candShuffled[k],candShuffled[l]]);
-  shuffle(attempts).slice(0,60).forEach(four=>{
-    // 3 種分法中最小的搭檔次數
-    const opts=[
+  // ── 綜合評分：同時考慮上場次數和搭檔歷史 ──
+  // 評分越低越優先：上場次數差距 * 10（主要條件）+ 搭檔次數加總（次要條件）
+  function fourScore(four){
+    // 上場次數加總（越少越優先）
+    const playSum=four.reduce((s,p)=>s+playCount[p],0);
+    // 3種分法中最小搭檔次數
+    const pairMin=Math.min(
       gps(four[0],four[1])+gps(four[2],four[3]),
       gps(four[0],four[2])+gps(four[1],four[3]),
       gps(four[0],four[3])+gps(four[1],four[2])
-    ];
-    const s=Math.min(...opts);
+    );
+    // 上場次數差距（越平均越好）
+    const playMax4=Math.max(...four.map(p=>playCount[p]));
+    const playMin4=Math.min(...four.map(p=>playCount[p]));
+    const playSpread=playMax4-playMin4;
+    // 主要：上場次數差距小 + 總上場少 ; 次要：搭檔次數少
+    return playSum*10 + playSpread*30 + pairMin;
+  }
+
+  // 列舉所有 C(n,4) 組合，找綜合評分最低的
+  const allAvail=shuffle([...avail]);
+  const attempts=[];
+  for(let i=0;i<allAvail.length;i++)
+    for(let j=i+1;j<allAvail.length;j++)
+      for(let k=j+1;k<allAvail.length;k++)
+        for(let l=k+1;l<allAvail.length;l++)
+          attempts.push([allAvail[i],allAvail[j],allAvail[k],allAvail[l]]);
+  let bestFour=null,bestScore=Infinity;
+  // 最多嘗試 80 種組合
+  shuffle(attempts).slice(0,80).forEach(four=>{
+    const s=fourScore(four);
     if(s<bestScore){bestScore=s;bestFour=four;}
   });
-  const picked=bestFour||candShuffled.slice(0,4);
+  const picked=bestFour||allAvail.slice(0,4);
 
-  // 3 種分法中取搭檔次數最少的
+  // 從最佳4人的3種分法中，選搭檔次數最少的
   const combos=[[[picked[0],picked[1]],[picked[2],picked[3]]],[[picked[0],picked[2]],[picked[1],picked[3]]],[[picked[0],picked[3]],[picked[1],picked[2]]]];
   combos.sort((x,y)=>{
     const xScore=gps(x[0][0],x[0][1])+gps(x[1][0],x[1][1]);
