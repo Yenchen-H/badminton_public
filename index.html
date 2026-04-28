@@ -583,9 +583,9 @@ function drawMatch(attendees,existingMatches,excludePlayers){
     [...m.teamA,...m.teamB].forEach(p=>{if(playCount[p]!==undefined)playCount[p]++;});
   });
 
-  // 同隊次數：所有已抽的場次都算
+  // 同隊次數：只統計有比分的場次（避免搭檔賽 schedule 的未打場次干擾）
   const pairCount={};
-  (existingMatches||[]).forEach(m=>{
+  (existingMatches||[]).filter(m=>m.scoreA!==''||m.scoreB!=='').forEach(m=>{
     [[m.teamA[0],m.teamA[1]],[m.teamB[0],m.teamB[1]]].forEach(function(pair){
       var a=pair[0],b=pair[1];if(!a||!b)return;
       var key=[a,b].sort().join('|');pairCount[key]=(pairCount[key]||0)+1;
@@ -599,39 +599,14 @@ function drawMatch(attendees,existingMatches,excludePlayers){
   const cands=(pool.length>=4?pool:sorted).slice(0,Math.max(4,pool.length));
   const picked=shuffle(cands).slice(0,4);
 
-  // ── 程度配對邏輯 ──
-  // 各組3種分法，選程度最均衡的（優先強弱搭配，全輪完後才強強/弱弱）
-  const lv=p=>(playerLevels[p]||'mid');
-  const lvScore={'strong':2,'mid':1,'weak':0};
-  // 計算一場裡 teamA+teamB 的程度差距（越小越均衡）
-  function teamBalance(tA,tB){
-    const sA=lvScore[lv(tA[0])]+lvScore[lv(tA[1])];
-    const sB=lvScore[lv(tB[0])]+lvScore[lv(tB[1])];
-    return Math.abs(sA-sB); // 0=最均衡，4=最懸殊
-  }
-  // 計算一個搭檔內的程度差（優先強弱搭配=2，強中/弱中=1，強強/弱弱=0）
-  function pairDiversity(tA,tB){
-    const d=p=>Math.abs(lvScore[lv(tA[0])]-lvScore[lv(tA[1])])+Math.abs(lvScore[lv(tB[0])]-lvScore[lv(tB[1])]);
-    return d();
-  }
-  // 是否已有強弱搭配存在（如果已有則允許同等級配對）
-  const hasStrongWeakPairs=(existingMatches||[]).some(m=>{
-    const checkPair=(t)=>Math.abs(lvScore[lv(t[0])]-lvScore[lv(t[1])])===2;
-    return checkPair(m.teamA)||checkPair(m.teamB);
-  });
+  // ── 搭檔優先邏輯：未曾搭檔過的組合優先 ──
   const combos=[[[picked[0],picked[1]],[picked[2],picked[3]]],[[picked[0],picked[2]],[picked[1],picked[3]]],[[picked[0],picked[3]],[picked[1],picked[2]]]];
   const gps=(a,b)=>pairCount[[a,b].sort().join('|')]||0;
   combos.sort((x,y)=>{
-    // 先以程度均衡度排序（搭檔內強弱差異大 = 優先）
-    const divX=pairDiversity(x[0],x[1]);
-    const divY=pairDiversity(y[0],y[1]);
-    if(divX!==divY)return divY-divX; // 差異大的優先
-    // 再以場面均衡度排序（兩隊實力接近 = 優先）
-    const balX=teamBalance(x[0],x[1]);
-    const balY=teamBalance(y[0],y[1]);
-    if(balX!==balY)return balX-balY;
-    // 最後以同隊次數排序（減少重複搭檔）
-    return (gps(x[0][0],x[0][1])+gps(x[1][0],x[1][1]))-(gps(y[0][0],y[0][1])+gps(y[1][0],y[1][1]));
+    // 同隊次數越少越優先（兩隊搭檔次數加總）
+    const xScore=gps(x[0][0],x[0][1])+gps(x[1][0],x[1][1]);
+    const yScore=gps(y[0][0],y[0][1])+gps(y[1][0],y[1][1]);
+    return xScore-yScore;
   });
   const teamA=combos[0][0],teamB=combos[0][1];
   const waiting=attendees.filter(p=>![...teamA,...teamB,...excludePlayers].includes(p));
@@ -1175,22 +1150,40 @@ function reshufflePairs(id){
 
 // 搭檔賽分組：優先強弱搭配，剩餘的同等級配對
 function makeLevelPairs(attendees){
-  const lvScore={'strong':2,'mid':1,'weak':0};
-  const lv=p=>playerLevels[p]||'mid';
-  const strong=shuffle(attendees.filter(p=>lv(p)==='strong'));
-  const mid=shuffle(attendees.filter(p=>lv(p)==='mid'));
-  const weak=shuffle(attendees.filter(p=>lv(p)==='weak'));
+  // 優先讓未曾搭檔過的人配對
+  // 收集歷史搭檔次數
+  const pairHistory={};
+  sessions.forEach(s=>{
+    // 只統計已確認搭檔的場次，避免當前未確認場次影響配對
+    if(s.pairsConfirmed)(s.pairs||[]).forEach(pair=>{
+      const key=[...pair].sort().join('|');
+      pairHistory[key]=(pairHistory[key]||0)+1;
+    });
+    // 一般模式的比賽也算（同隊搭檔）
+    (s.matches||[]).filter(m=>m.scoreA!==''||m.scoreB!=='').forEach(m=>{
+      [[...(m.teamA||[])],[...(m.teamB||[])]].forEach(team=>{
+        if(team.length===2){
+          const key=[...team].sort().join('|');
+          pairHistory[key]=(pairHistory[key]||0)+1;
+        }
+      });
+    });
+  });
+
+  // 用貪婪法：每次從剩餘人中，找搭檔次數最少的配對
+  const remaining=shuffle([...attendees]);
   const pairs=[];
-  // 先配強弱
-  while(strong.length&&weak.length){pairs.push([strong.pop(),weak.pop()]);}
-  // 剩強配中
-  while(strong.length&&mid.length){pairs.push([strong.pop(),mid.pop()]);}
-  // 剩弱配中
-  while(weak.length&&mid.length){pairs.push([weak.pop(),mid.pop()]);}
-  // 同等級配對
-  const remain=shuffle([...strong,...mid,...weak]);
-  for(let i=0;i<remain.length;i+=2){
-    if(remain[i+1])pairs.push([remain[i],remain[i+1]]);
+  while(remaining.length>=2){
+    const a=remaining.shift();
+    // 找和 a 搭檔次數最少的人
+    let bestIdx=0;
+    let bestCount=Infinity;
+    for(let i=0;i<remaining.length;i++){
+      const key=[a,remaining[i]].sort().join('|');
+      const cnt=pairHistory[key]||0;
+      if(cnt<bestCount){bestCount=cnt;bestIdx=i;}
+    }
+    pairs.push([a,remaining.splice(bestIdx,1)[0]]);
   }
   return pairs;
 }
@@ -1661,6 +1654,7 @@ function confirmEditPlayer(i){
     if(s.schedule)s.schedule.forEach(m=>{
       if(m.teamA)m.teamA=m.teamA.map(p=>p===oldName?newName:p);
       if(m.teamB)m.teamB=m.teamB.map(p=>p===oldName?newName:p);
+      if(m.referee===oldName)m.referee=newName;
     });
   });
   if(playerLevels[oldName]!==undefined){playerLevels[newName]=playerLevels[oldName];delete playerLevels[oldName];}
