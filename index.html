@@ -430,25 +430,19 @@ async function pullFromCloud(){
     const res=await fetch(WEB_APP_URL+'?action=getData&t='+Date.now());
     const data=await res.json();
     if(!data.ok)throw new Error(data.error||'讀取失敗');
-    // 只在雲端資料較新時才覆蓋（以場次數量判斷）
-    const cloudSessCount=(data.sessions||[]).length;
-    const localSessCount=sessions.length;
-    if(cloudSessCount>=localSessCount){
-      if(data.players&&data.players.length>0)players=data.players;
-      if(data.sessions){
-        // 保留本地 session 的 attendeesConfirmed 狀態，避免雲端覆蓋後跳回步驟一
-        const localMap={};
-        sessions.forEach(s=>{localMap[s.id]=s;});
-        sessions=data.sessions.map(s=>{
-          const local=localMap[s.id];
-          if(local&&local.attendeesConfirmed&&!s.attendeesConfirmed){
-            s.attendeesConfirmed=true;
-          }
-          return s;
-        });
-      }
-      if(data.winPts)winPts=data.winPts;
+    // 直接使用雲端資料（移除數量比較，讓刪除操作正確生效）
+    if(data.players&&data.players.length>0)players=data.players;
+    if(data.sessions){
+      // 保留本地 attendeesConfirmed 狀態，避免雲端覆蓋後跳回步驟一
+      const localMap={};
+      sessions.forEach(s=>{localMap[s.id]=s;});
+      sessions=data.sessions.map(s=>{
+        const local=localMap[s.id];
+        if(local&&local.attendeesConfirmed&&!s.attendeesConfirmed)s.attendeesConfirmed=true;
+        return s;
+      });
     }
+    if(data.winPts)winPts=data.winPts;
     localSave();
     setSyncBadge('ok','同步 '+fmtNow());
     renderAll();
