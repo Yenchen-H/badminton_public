@@ -350,6 +350,7 @@ let activeSessionId=null, adminUnlocked=false, pendingAdminAction=null;
 let sessionBrowseDate='';
 const liveScores={};
 let WEB_APP_URL=FIXED_WEB_APP_URL||localStorage.getItem('bm_url')||'';
+let _pushInFlight=false; // 推送進行中時，禁止 pull 覆蓋本地資料
 
 function genId(){return Date.now().toString(36)+Math.random().toString(36).slice(2,6);}
 function fmtDate(d){if(!d)return'';const p=d.split('-');return p[0]+'/'+(+p[1])+'/'+(+p[2]);}
@@ -425,13 +426,16 @@ function setSyncBadge(state,txt){
 }
 async function pullFromCloud(){
   if(!WEB_APP_URL||WEB_APP_URL==='YOUR_WEB_APP_URL_HERE'){setSyncBadge('err','未設定 URL');renderAll();return;}
+  // 推送進行中時不拉取，避免剛刪除的資料被舊雲端蓋回來
+  if(_pushInFlight){return;}
   setSyncBadge('loading');
   try{
     const res=await fetch(WEB_APP_URL+'?action=getData&t='+Date.now());
     const data=await res.json();
     if(!data.ok)throw new Error(data.error||'讀取失敗');
-    // 直接使用雲端資料（移除數量比較，讓刪除操作正確生效）
-    if(data.players&&data.players.length>0)players=data.players;
+    // 二次確認：pull 完成後若推送已開始，放棄本次結果
+    if(_pushInFlight){return;}
+    if(Array.isArray(data.players))players=data.players;
     if(data.sessions){
       // 保留本地 attendeesConfirmed 狀態，避免雲端覆蓋後跳回步驟一
       const localMap={};
@@ -450,6 +454,7 @@ async function pullFromCloud(){
 }
 async function pushToCloud(cb){
   if(!WEB_APP_URL||WEB_APP_URL==='YOUR_WEB_APP_URL_HERE'){localSave();if(cb)cb();return;}
+  _pushInFlight=true;
   setSyncBadge('loading','儲存中');
   try{
     const res=await fetch(WEB_APP_URL,{method:'POST',body:JSON.stringify({
@@ -460,6 +465,7 @@ async function pushToCloud(cb){
     if(json.ok){localSave();setSyncBadge('ok','同步 '+fmtNow());if(cb)cb();}
     else{localSave();setSyncBadge('err','雲端失敗');if(cb)cb();}
   }catch(e){localSave();setSyncBadge('err','連線失敗');if(cb)cb();}
+  finally{_pushInFlight=false;}
 }
 function saveCfg(){
   const u=(document.getElementById('cfgUrl')||{}).value.trim();
@@ -665,7 +671,13 @@ function deleteSess(id){
   if(!confirm('確定刪除此場次？'))return;
   sessions=sessions.filter(s=>s.id!==id);
   if(activeSessionId===id){activeSessionId=null;document.getElementById('sessContent').innerHTML='';}
-  pushToCloud(()=>{renderSessList();renderRank();});
+  // 先本地渲染，再推雲端
+  localSave();
+  renderSessList();
+  renderRank();
+  renderHistory();
+  renderUpcoming();
+  pushToCloud(null);
 }
 
 function renderSessContent(id){
@@ -999,6 +1011,7 @@ function delMatch(sid,mi){
   localSave();
   renderSessContent(sid);
   renderSessList();
+  pushToCloud(null);
 }
 
 /* ================================================
@@ -1091,10 +1104,8 @@ function addPlayer(){
   players.push(n);
   inp.value='';
   inp.focus();
-  localSave();
-  // 只更新選手列表，不重繪整個設定頁（避免輸入框狀態遺失）
-  renderPlayerList();
-  renderRank();
+  // 推雲端（含本地存），確保刷新後不消失
+  pushToCloud(()=>{renderPlayerList();renderRank();});
 }
 
 function renderPlayerList(){
@@ -1114,7 +1125,8 @@ function renderPlayerList(){
 }
 function removePlayer(i){
   if(!confirm('確定移除「'+players[i]+'」？'))return;
-  players.splice(i,1);localSave();renderPlayerList();renderRank();
+  players.splice(i,1);
+  pushToCloud(()=>{renderPlayerList();renderRank();});
 }
 function clearAll(){sessions=[];activeSessionId=null;pushToCloud(()=>{document.getElementById('sessContent').innerHTML='';renderAll();});}
 
